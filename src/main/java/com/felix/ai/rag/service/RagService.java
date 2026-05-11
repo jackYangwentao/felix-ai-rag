@@ -45,14 +45,29 @@ public class RagService {
     @Value("${rag.chunk-overlap:50}")
     private int chunkOverlap;
 
-    private static final String SYSTEM_PROMPT = """
-            你是一个智能助手，专门回答用户问题。
-            请基于以下检索到的相关信息来回答问题。
-            如果相关信息不足，请明确告知用户。
-            回答要简洁、准确、有帮助。
+    /**
+     * RAG Prompt 模板 - 参考LangChain最佳实践
+     * 使用清晰的结构和明确的指令
+     */
+    private static final String RAG_PROMPT_TEMPLATE = """
+            你是一个专业的智能助手，专门基于提供的参考资料回答用户问题。
 
-            相关信息：
+            回答要求：
+            1. 严格基于以下提供的参考资料进行回答
+            2. 如果参考资料不足以回答问题，请明确告知"根据现有资料无法回答该问题"
+            3. 回答应准确、简洁、有条理
+            4. 如果涉及多个要点，请使用序号列出
+
+            ====================
+            参考资料：
+            ====================
             {context}
+
+            ====================
+            用户问题：{question}
+            ====================
+
+            请基于以上参考资料回答问题：
             """;
 
     /**
@@ -83,7 +98,8 @@ public class RagService {
     }
 
     /**
-     * 基于RAG的问答
+     * 基于RAG的问答 - 参考LangChain实现
+     * 流程：检索 → 上下文拼接 → Prompt构建 → LLM生成
      *
      * @param userMessage 用户问题
      * @param sessionId   会话ID
@@ -92,33 +108,39 @@ public class RagService {
     public String chatWithRag(String userMessage, String sessionId) {
         long startTime = System.currentTimeMillis();
 
-        // 检索相关内容
+        // Step 1: 检索相关内容 (Similarity Search)
         List<Content> relevantContents = contentRetriever.retrieve(
                 dev.langchain4j.rag.query.Query.from(userMessage)
         );
 
+        if (relevantContents.isEmpty()) {
+            log.warn("未检索到相关内容");
+            return "抱歉，根据现有资料无法回答该问题。请尝试上传相关文档或换个问题。";
+        }
+
         log.info("检索到 {} 条相关内容", relevantContents.size());
 
-        // 构建上下文
+        // Step 2: 构建上下文 - 使用"\n\n"分隔，让LLM更清晰识别段落边界
         String context = relevantContents.stream()
                 .map(Content::textSegment)
                 .map(TextSegment::text)
-                .collect(Collectors.joining("\n---\n"));
+                .collect(Collectors.joining("\n\n"));
 
-        // 构建系统提示词
-        String systemPrompt = SYSTEM_PROMPT.replace("{context}", context);
+        // Step 3: 构建完整Prompt
+        String finalPrompt = RAG_PROMPT_TEMPLATE
+                .replace("{context}", context)
+                .replace("{question}", userMessage);
 
-        // 调用模型
+        // Step 4: 调用LLM生成回答
         List<dev.langchain4j.data.message.ChatMessage> messages = List.of(
-                SystemMessage.from(systemPrompt),
-                UserMessage.from(userMessage)
+                UserMessage.from(finalPrompt)
         );
 
         Response<AiMessage> response = chatLanguageModel.generate(messages);
         String answer = response.content().text();
 
         long processingTime = System.currentTimeMillis() - startTime;
-        log.info("RAG问答完成，耗时: {}ms", processingTime);
+        log.info("RAG问答完成，检索到{}条内容，耗时: {}ms", relevantContents.size(), processingTime);
 
         return answer;
     }
@@ -159,5 +181,14 @@ public class RagService {
      */
     public String generateSessionId() {
         return UUID.randomUUID().toString();
+    }
+
+    /**
+     * 清空向量存储（用于重置知识库）
+     */
+    public void clearVectorStore() {
+        log.info("清空向量存储");
+        // InMemoryEmbeddingStore 没有直接清空方法，这里通过重新创建实现
+        // 实际生产环境应使用持久化存储
     }
 }

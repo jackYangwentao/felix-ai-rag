@@ -17,12 +17,12 @@ langchain4j:
       model-name: nomic-embed-text
       timeout: 60s
 
-# RAG Configuration
+# RAG Configuration - 参考LangChain最佳实践
 rag:
-  chunk-size: 500
-  chunk-overlap: 50
-  max-results: 5
-  min-score: 0.7
+  chunk-size: 1000        # 文档分块大小（参考文档使用4000，本地模型建议用较小值）
+  chunk-overlap: 200      # 分块重叠大小（保持上下文连贯性）
+  max-results: 3          # 检索结果数量（参考文档取Top-3）
+  min-score: 0.7          # 最小相似度分数
 
 # Logging
 logging:

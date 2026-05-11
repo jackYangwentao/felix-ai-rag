@@ -5,4 +5,5 @@ com/felix/ai/rag/dto/ChatRequest.class
 com/felix/ai/rag/config/RagConfiguration.class
 com/felix/ai/rag/FelixAiRagApplication.class
 com/felix/ai/rag/dto/DocumentUploadRequest.class
+com/felix/ai/rag/loader/DocumentLoader.class
 com/felix/ai/rag/service/RagService.class

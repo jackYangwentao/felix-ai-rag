@@ -5,3 +5,4 @@
 /Users/yangwentao01/Documents/wtyang/felix-ai-rag/src/main/java/com/felix/ai/rag/dto/DocumentUploadRequest.java
 /Users/yangwentao01/Documents/wtyang/felix-ai-rag/src/main/java/com/felix/ai/rag/controller/RagController.java
 /Users/yangwentao01/Documents/wtyang/felix-ai-rag/src/main/java/com/felix/ai/rag/FelixAiRagApplication.java
+/Users/yangwentao01/Documents/wtyang/felix-ai-rag/src/main/java/com/felix/ai/rag/loader/DocumentLoader.java

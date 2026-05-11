@@ -3,12 +3,15 @@ package com.felix.ai.rag.controller;
 import com.felix.ai.rag.dto.ChatRequest;
 import com.felix.ai.rag.dto.ChatResponse;
 import com.felix.ai.rag.dto.DocumentUploadRequest;
+import com.felix.ai.rag.loader.DocumentLoader;
 import com.felix.ai.rag.service.RagService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -22,6 +25,7 @@ import java.util.List;
 public class RagController {
 
     private final RagService ragService;
+    private final DocumentLoader documentLoader;
 
     /**
      * RAG 问答接口
@@ -79,7 +83,7 @@ public class RagController {
     }
 
     /**
-     * 文档上传接口
+     * 文档上传接口（文本形式）
      * 将文档内容索引到向量存储
      */
     @PostMapping("/documents")
@@ -97,6 +101,31 @@ public class RagController {
         ragService.indexDocument(request.getContent(), sourceName);
 
         return ResponseEntity.ok("文档 \"" + sourceName + "\" 索引成功");
+    }
+
+    /**
+     * 文档上传接口（文件形式）
+     * 支持 txt, md, json, csv 等文本文件
+     */
+    @PostMapping("/documents/file")
+    public ResponseEntity<String> uploadDocumentFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "description", required = false) String description) {
+        log.info("收到文件上传请求: {}", file.getOriginalFilename());
+
+        try {
+            String content = documentLoader.loadFromMultipartFile(file);
+            String sourceName = file.getOriginalFilename();
+
+            ragService.indexDocument(content, sourceName);
+
+            return ResponseEntity.ok("文件 \"" + sourceName + "\" 上传并索引成功，共 " + content.length() + " 字符");
+        } catch (IOException e) {
+            log.error("文件上传失败", e);
+            return ResponseEntity.badRequest().body("文件读取失败: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 
     /**
