@@ -20,6 +20,10 @@
   - 图像理解：使用视觉模型（llava）生成图像描述
   - 图像问答：基于图像内容进行问答
   - 图像索引：将图像描述索引到知识库
+- **高级检索功能**（参考 Datawhale All-In-RAG 向量数据库章节）
+  - 重排序（Reranking）：两阶段检索，提高结果相关性
+  - 多查询搜索：使用多个查询提高召回率
+  - 混合检索支持（可扩展）
 - 参考 LangChain 最佳实践的 Prompt 模板设计
 - 支持文本上传和文件上传两种方式
 - RESTful API 接口
@@ -32,6 +36,8 @@
 - Java 17+
 - Maven
 - 多种向量数据库（内存/Redis/Chroma/Qdrant/PGVector）
+- Apache Tika（文档解析）
+- 重排序（Reranking）支持
 
 ## RAG 架构流程
 
@@ -266,6 +272,49 @@ curl -X POST http://localhost:8080/api/v1/rag/multimodal/images \
   -F "image=@/path/to/image.jpg" \
   -F "prompt=请描述这张图片的主要内容"
 ```
+
+#### 增强搜索（支持重排序）
+使用两阶段检索（向量检索 + LLM重排序）提高结果相关性。
+```bash
+curl "http://localhost:8080/api/v1/rag/search/enhanced?query=Spring Boot&maxResults=5&rerank=true"
+```
+
+**参数说明：**
+- `query` (必填): 检索关键词
+- `maxResults` (可选): 返回结果数，默认3
+- `minScore` (可选): 最小相似度分数，默认0.7
+- `rerank` (可选): 是否启用重排序，默认false
+
+**响应示例：**
+```json
+{
+  "query": "Spring Boot",
+  "results": [
+    {
+      "content": "Spring Boot 提供了自动配置...",
+      "vectorScore": 0.85,
+      "rerankScore": 9.2
+    }
+  ],
+  "totalResults": 1,
+  "usedRerank": true
+}
+```
+
+#### 多查询搜索
+使用多个相关查询提高召回率，自动合并去重并重排序。
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/search/multi-query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "queries": ["Spring Boot特点", "Spring Boot优势", "Spring Boot功能"],
+    "maxResults": 5
+  }'
+```
+
+**参数说明：**
+- `queries` (必填): 多个查询字符串数组
+- `maxResults` (可选): 返回结果数，默认5
 
 ## 配置文件
 
@@ -583,13 +632,47 @@ rag:
 ollama pull llava
 ```
 
-### 4. 检索策略
+### 4. 检索策略（参考 Datawhale All-In-RAG）
 
+项目实现了多种检索优化策略，参考 Datawhale All-In-RAG 向量数据库章节。
+
+#### 基础检索
 - **相似度搜索**: 基于向量相似度
 - **Top-k**: 取最相关的3条内容
 - **上下文拼接**: 使用 `"\n\n"` 分隔，让LLM更清晰识别段落边界
 
-### 4. 支持的模型
+#### 增强检索 - 重排序（Reranking）
+两阶段检索策略：
+1. **第一阶段（召回）**: 向量检索获取候选集（Top-K×2）
+2. **第二阶段（精排）**: 使用LLM对候选集重排序，返回Top-K
+
+**优势**: 提高检索结果的相关性，减少不相关内容干扰
+
+**配置**:
+```yaml
+rag:
+  reranker:
+    enabled: true        # 启用重排序
+    top-k: 5            # 返回结果数
+  search:
+    rerank: false       # 是否默认启用（会影响响应时间）
+```
+
+**API使用**:
+```bash
+# 增强搜索（带重排序）
+curl "http://localhost:8080/api/v1/rag/search/enhanced?query=查询&rerank=true"
+
+# 多查询搜索（使用多个相关查询提高召回率）
+curl -X POST http://localhost:8080/api/v1/rag/search/multi-query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "queries": ["Spring Boot特点", "Spring Boot优势", "Spring Boot功能"],
+    "maxResults": 5
+  }'
+```
+
+### 6. 支持的模型
 
 #### 聊天模型
 - llama3.1 / llama3

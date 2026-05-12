@@ -4,6 +4,7 @@ import com.felix.ai.rag.dto.ChatRequest;
 import com.felix.ai.rag.dto.ChatResponse;
 import com.felix.ai.rag.dto.DocumentUploadRequest;
 import com.felix.ai.rag.loader.DocumentLoader;
+import com.felix.ai.rag.service.EnhancedSearchService;
 import com.felix.ai.rag.service.RagService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * RAG 控制器
@@ -26,6 +28,7 @@ public class RagController {
 
     private final RagService ragService;
     private final DocumentLoader documentLoader;
+    private final EnhancedSearchService enhancedSearchService;
 
     /**
      * RAG 问答接口
@@ -150,7 +153,7 @@ public class RagController {
     }
 
     /**
-     * 内容检索接口
+     * 内容检索接口（基础版）
      * 只检索相关文档，不生成回答
      */
     @GetMapping("/search")
@@ -160,6 +163,49 @@ public class RagController {
 
         List<String> results = ragService.searchRelevantContent(query);
         return ResponseEntity.ok(results);
+    }
+
+    /**
+     * 增强搜索接口
+     * 支持重排序的高级检索
+     *
+     * 参考 Datawhale All-In-RAG 向量数据库章节的重排序概念
+     */
+    @GetMapping("/search/enhanced")
+    public ResponseEntity<EnhancedSearchService.SearchResult> searchEnhanced(
+            @RequestParam("query") String query,
+            @RequestParam(value = "maxResults", required = false) Integer maxResults,
+            @RequestParam(value = "minScore", required = false) Double minScore,
+            @RequestParam(value = "rerank", required = false) Boolean useRerank) {
+        log.info("收到增强检索请求: {}, maxResults={}, rerank={}", query, maxResults, useRerank);
+
+        EnhancedSearchService.SearchResult result = enhancedSearchService.search(
+                query, maxResults, minScore, useRerank);
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 多查询搜索接口
+     * 使用多个相关查询进行检索，合并并去重结果
+     */
+    @PostMapping("/search/multi-query")
+    public ResponseEntity<EnhancedSearchService.SearchResult> searchMultiQuery(
+            @RequestBody Map<String, Object> request) {
+        @SuppressWarnings("unchecked")
+        List<String> queries = (List<String>) request.get("queries");
+        Integer maxResults = (Integer) request.get("maxResults");
+
+        if (queries == null || queries.isEmpty()) {
+            return ResponseEntity.badRequest().body(null);
+        }
+
+        log.info("收到多查询检索请求，查询数: {}", queries.size());
+
+        EnhancedSearchService.SearchResult result = enhancedSearchService.multiQuerySearch(
+                queries, maxResults != null ? maxResults : 5);
+
+        return ResponseEntity.ok(result);
     }
 
     /**
