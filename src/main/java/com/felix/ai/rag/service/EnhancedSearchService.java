@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.Arrays;
 
 /**
  * 增强搜索服务
@@ -131,7 +132,7 @@ public class EnhancedSearchService {
 
     /**
      * 多查询搜索 - 使用多个相关查询进行检索，合并结果
-     * 用于提高召回率
+     * 用于提高召回率（参考 Milvus 混合检索最佳实践）
      *
      * @param queries 多个查询
      * @param maxResults 最大结果数
@@ -167,6 +168,142 @@ public class EnhancedSearchService {
                 .totalResults(finalResults.size())
                 .usedRerank(true)
                 .build();
+    }
+
+    /**
+     * 批量搜索 - 同时处理多个查询（参考 Milvus 批量查询优化）
+     *
+     * @param queries 查询列表
+     * @param maxResults 每个查询的最大结果数
+     * @return 批量搜索结果
+     */
+    public Map<String, SearchResult> batchSearch(List<String> queries, int maxResults) {
+        log.info("执行批量搜索，查询数: {}", queries.size());
+        long startTime = System.currentTimeMillis();
+
+        Map<String, SearchResult> results = new HashMap<>();
+
+        // 并行处理多个查询
+        queries.parallelStream().forEach(query -> {
+            SearchResult result = search(query, maxResults, null, false);
+            results.put(query, result);
+        });
+
+        log.info("批量搜索完成，{} 个查询，耗时 {}ms",
+                queries.size(), System.currentTimeMillis() - startTime);
+
+        return results;
+    }
+
+    /**
+     * 多样性搜索 - 确保结果来自不同文档（参考 Milvus 分组检索）
+     *
+     * @param query 查询
+     * @param maxResults 最大结果数
+     * @param diversityFactor 多样性因子（0-1，越大多样性越高）
+     * @return 多样化的搜索结果
+     */
+    public SearchResult diverseSearch(String query, int maxResults, double diversityFactor) {
+        log.info("执行多样性搜索: '{}', maxResults={}, diversity={}", query, maxResults, diversityFactor);
+
+        // 1. 获取更多候选
+        int candidateCount = (int) (maxResults * (1 + diversityFactor));
+        SearchResult initialResult = search(query, candidateCount, null, false);
+
+        if (initialResult.getResults().size() <= maxResults) {
+            return initialResult;
+        }
+
+        // 2. 使用 MMR (Maximal Marginal Relevance) 算法选择多样化结果
+        List<SearchResultItem> diverseResults = selectDiverseResults(
+                initialResult.getResults(), maxResults, diversityFactor);
+
+        return SearchResult.builder()
+                .query(query)
+                .results(diverseResults)
+                .totalResults(diverseResults.size())
+                .usedRerank(false)
+                .build();
+    }
+
+    /**
+     * MMR 算法选择多样化结果
+     */
+    private List<SearchResultItem> selectDiverseResults(
+            List<SearchResultItem> candidates, int maxResults, double diversityFactor) {
+        List<SearchResultItem> selected = new ArrayList<>();
+        Set<Integer> selectedIndices = new HashSet<>();
+
+        while (selected.size() < maxResults && selectedIndices.size() < candidates.size()) {
+            double maxScore = -1;
+            int bestIndex = -1;
+
+            for (int i = 0; i < candidates.size(); i++) {
+                if (selectedIndices.contains(i)) continue;
+
+                SearchResultItem candidate = candidates.get(i);
+
+                // 计算相关性得分
+                double relevanceScore = candidate.getRerankScore() != null
+                        ? candidate.getRerankScore()
+                        : 0.5;
+
+                // 计算多样性得分（与已选结果的平均相似度）
+                double diversityScore = calculateDiversityScore(candidate, selected);
+
+                // MMR 分数 = λ * 相关性 - (1-λ) * 相似度
+                double mmrScore = diversityFactor * relevanceScore
+                        - (1 - diversityFactor) * diversityScore;
+
+                if (mmrScore > maxScore) {
+                    maxScore = mmrScore;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex >= 0) {
+                selected.add(candidates.get(bestIndex));
+                selectedIndices.add(bestIndex);
+            } else {
+                break;
+            }
+        }
+
+        return selected;
+    }
+
+    /**
+     * 计算与已选结果的平均相似度（用于 MMR）
+     */
+    private double calculateDiversityScore(SearchResultItem candidate, List<SearchResultItem> selected) {
+        if (selected.isEmpty()) {
+            return 0;
+        }
+
+        String candidateText = candidate.getContent();
+        double totalSimilarity = 0;
+
+        for (SearchResultItem item : selected) {
+            totalSimilarity += calculateTextSimilarity(candidateText, item.getContent());
+        }
+
+        return totalSimilarity / selected.size();
+    }
+
+    /**
+     * 简单的文本相似度计算（基于词重叠）
+     */
+    private double calculateTextSimilarity(String text1, String text2) {
+        Set<String> words1 = new HashSet<>(Arrays.asList(text1.toLowerCase().split("\\s+")));
+        Set<String> words2 = new HashSet<>(Arrays.asList(text2.toLowerCase().split("\\s+")));
+
+        Set<String> intersection = new HashSet<>(words1);
+        intersection.retainAll(words2);
+
+        Set<String> union = new HashSet<>(words1);
+        union.addAll(words2);
+
+        return union.isEmpty() ? 0 : (double) intersection.size() / union.size();
     }
 
     /**

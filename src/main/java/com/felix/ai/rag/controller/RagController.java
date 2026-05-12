@@ -209,6 +209,50 @@ public class RagController {
     }
 
     /**
+     * 批量搜索接口
+     * 同时处理多个查询（参考 Milvus 批量查询优化）
+     */
+    @PostMapping("/search/batch")
+    public ResponseEntity<Map<String, EnhancedSearchService.SearchResult>> searchBatch(
+            @RequestBody Map<String, Object> request) {
+        @SuppressWarnings("unchecked")
+        List<String> queries = (List<String>) request.get("queries");
+        Integer maxResults = (Integer) request.get("maxResults");
+
+        if (queries == null || queries.isEmpty()) {
+            return ResponseEntity.badRequest().body(null);
+        }
+
+        log.info("收到批量检索请求，查询数: {}", queries.size());
+
+        Map<String, EnhancedSearchService.SearchResult> results =
+                enhancedSearchService.batchSearch(queries, maxResults != null ? maxResults : 5);
+
+        return ResponseEntity.ok(results);
+    }
+
+    /**
+     * 多样性搜索接口
+     * 使用 MMR 算法确保结果多样性（参考 Milvus 分组检索）
+     */
+    @GetMapping("/search/diverse")
+    public ResponseEntity<EnhancedSearchService.SearchResult> searchDiverse(
+            @RequestParam("query") String query,
+            @RequestParam(value = "maxResults", required = false) Integer maxResults,
+            @RequestParam(value = "diversity", required = false) Double diversityFactor) {
+
+        int topK = maxResults != null ? maxResults : 5;
+        double diversity = diversityFactor != null ? diversityFactor : 0.5;
+
+        log.info("收到多样性检索请求: {}, maxResults={}, diversity={}", query, topK, diversity);
+
+        EnhancedSearchService.SearchResult result =
+                enhancedSearchService.diverseSearch(query, topK, diversity);
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
      * 健康检查
      */
     @GetMapping("/health")

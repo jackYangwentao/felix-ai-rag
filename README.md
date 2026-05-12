@@ -20,10 +20,12 @@
   - 图像理解：使用视觉模型（llava）生成图像描述
   - 图像问答：基于图像内容进行问答
   - 图像索引：将图像描述索引到知识库
-- **高级检索功能**（参考 Datawhale All-In-RAG 向量数据库章节）
+- **高级检索功能**（参考 Datawhale All-In-RAG 和 Milvus 优化）
   - 重排序（Reranking）：两阶段检索，提高结果相关性
   - 多查询搜索：使用多个查询提高召回率
-  - 混合检索支持（可扩展）
+  - 批量搜索：并行处理多个查询，提高吞吐量
+  - 多样性搜索（MMR）：确保结果多样性，避免重复
+  - 索引类型优化建议：HNSW、IVF、FLAT 选择指南
 - 参考 LangChain 最佳实践的 Prompt 模板设计
 - 支持文本上传和文件上传两种方式
 - RESTful API 接口
@@ -315,6 +317,53 @@ curl -X POST http://localhost:8080/api/v1/rag/search/multi-query \
 **参数说明：**
 - `queries` (必填): 多个查询字符串数组
 - `maxResults` (可选): 返回结果数，默认5
+
+#### 批量搜索（参考 Milvus 优化）
+同时处理多个查询，适合批量处理场景。
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/search/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "queries": ["查询1", "查询2", "查询3"],
+    "maxResults": 3
+  }'
+```
+
+**参数说明：**
+- `queries` (必填): 查询字符串数组
+- `maxResults` (可选): 每个查询的结果数，默认3
+
+**响应示例：**
+```json
+{
+  "查询1": {
+    "query": "查询1",
+    "results": [...],
+    "totalResults": 3
+  },
+  "查询2": {
+    "query": "查询2",
+    "results": [...],
+    "totalResults": 3
+  }
+}
+```
+
+#### 多样性搜索（参考 Milvus MMR）
+使用 MMR (Maximal Marginal Relevance) 算法确保结果多样性，避免结果过于相似。
+```bash
+curl "http://localhost:8080/api/v1/rag/search/diverse?query=Spring Boot&maxResults=5&diversity=0.5"
+```
+
+**参数说明：**
+- `query` (必填): 检索关键词
+- `maxResults` (可选): 返回结果数，默认5
+- `diversity` (可选): 多样性因子（0-1），越大多样性越高，默认0.5
+
+**适用场景：**
+- 需要不同角度的答案
+- 避免重复内容
+- 探索性搜索
 
 ## 配置文件
 
@@ -632,9 +681,9 @@ rag:
 ollama pull llava
 ```
 
-### 4. 检索策略（参考 Datawhale All-In-RAG）
+### 4. 检索策略（参考 Datawhale All-In-RAG 和 Milvus 优化）
 
-项目实现了多种检索优化策略，参考 Datawhale All-In-RAG 向量数据库章节。
+项目实现了多种检索优化策略，参考 Datawhale All-In-RAG 向量数据库章节和 Milvus 最佳实践。
 
 #### 基础检索
 - **相似度搜索**: 基于向量相似度
@@ -670,6 +719,56 @@ curl -X POST http://localhost:8080/api/v1/rag/search/multi-query \
     "queries": ["Spring Boot特点", "Spring Boot优势", "Spring Boot功能"],
     "maxResults": 5
   }'
+```
+
+#### 检索优化建议（参考 Milvus）
+
+##### 1. 索引类型选择
+选择向量数据库时，考虑以下索引类型：
+
+| 索引类型 | 特点 | 适用场景 |
+|----------|------|----------|
+| **FLAT** | 暴力搜索，100%召回率 | 数据量小（<100万）、精度要求高 |
+| **HNSW** | 多层图索引，检索快 | **推荐**，内存充足时的首选 |
+| **IVF** | 聚类分桶，高吞吐 | 大规模数据，高并发场景 |
+| **DiskANN** | 磁盘优化，海量数据 | 十亿级数据，无法全载内存 |
+
+**建议**: 对于 RAG 应用，优先选择 **HNSW** 索引的向量数据库（如 Qdrant、Milvus）
+
+##### 2. 批量查询优化
+对于多个查询，使用批量搜索 API 提高吞吐量：
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/search/batch \
+  -H "Content-Type: application/json" \
+  -d '{"queries": ["Q1", "Q2", "Q3"]}'
+```
+
+##### 3. 多样性保证（MMR算法）
+避免结果过于相似，使用多样性搜索：
+```bash
+curl "http://localhost:8080/api/v1/rag/search/diverse?query=查询&diversity=0.5"
+```
+
+**参数说明**:
+- `diversity=0`: 完全基于相关性
+- `diversity=1`: 最大化多样性
+- `diversity=0.5`: 平衡相关性和多样性（推荐）
+
+##### 4. 混合检索架构（未来扩展）
+```
+用户查询
+    ↓
+┌─────────────────┐     ┌─────────────────┐
+│  密集向量检索    │     │  稀疏向量检索    │
+│  (语义理解)      │     │  (关键词匹配)    │
+└────────┬────────┘     └────────┬────────┘
+         └───────────┬───────────┘
+                     ↓
+              ┌─────────────┐
+│  重排序/Reranker │  ← 融合排序
+              └──────┬──────┘
+                     ↓
+              精准文档召回 → LLM生成
 ```
 
 ### 6. 支持的模型
