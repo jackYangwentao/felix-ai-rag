@@ -7,6 +7,10 @@
 - 基于 LangChain4J 框架的 Java 实现
 - 支持本地大模型（通过 Ollama）
 - 完整的 RAG 流程：文档加载 → 分块 → 向量化 → 索引 → 检索 → 生成
+- **多格式文档加载**（参考 Datawhale All-In-RAG 实现）
+  - 文本文件：txt, md, json, xml, html, csv, yaml 等
+  - 办公文档：pdf, doc, docx, xls, xlsx, ppt, pptx
+  - 自动元数据提取（标题、作者、页数等）
 - 参考 LangChain 最佳实践的 Prompt 模板设计
 - 支持文本上传和文件上传两种方式
 - RESTful API 接口
@@ -16,7 +20,7 @@
 - Spring Boot 3.2+
 - LangChain4J 0.31.0
 - Ollama（本地模型服务）
-- Java 16+
+- Java 17+
 - Maven
 - 多种向量数据库（内存/Redis/Chroma/Qdrant/PGVector）
 
@@ -157,16 +161,38 @@ curl -X POST http://localhost:8080/api/v1/rag/documents \
 - `description` (可选): 文档描述
 
 #### 上传文档（文件形式）
-上传文件并自动提取内容索引。
+上传文件并自动提取内容和元数据。支持多种格式：
+- **文本文件**: txt, md, markdown, json, xml, html, csv, yaml, sql
+- **办公文档**: pdf, doc, docx, xls, xlsx, ppt, pptx
+
 ```bash
+# 上传 PDF 文件
 curl -X POST http://localhost:8080/api/v1/rag/documents/file \
-  -F "file=@/path/to/your/document.txt" \
-  -F "description=文档描述"
+  -F "file=@/path/to/document.pdf" \
+  -F "description=产品手册"
+
+# 上传 Word 文档
+curl -X POST http://localhost:8080/api/v1/rag/documents/file \
+  -F "file=@/path/to/document.docx" \
+  -F "description=技术规范"
+
+# 上传 Excel 表格
+curl -X POST http://localhost:8080/api/v1/rag/documents/file \
+  -F "file=@/path/to/data.xlsx" \
+  -F "description=数据分析"
 ```
 
 **参数说明：**
-- `file` (必填): 文件，支持 txt, md, markdown, json, xml, html, csv, yaml, sql 等
+- `file` (必填): 文件，支持多种格式
 - `description` (可选): 文件描述
+
+**响应示例：**
+```
+文件 "document.pdf" 上传并索引成功
+- 字符数: 15234
+- 文件类型: application/pdf
+- 元数据: title=产品手册 author=张三 page-count=15
+```
 
 #### 检索内容（不生成回答）
 仅检索相关文档片段，不调用 LLM 生成回答。
@@ -342,6 +368,46 @@ rag:
 - `mxbai-embed-large`: 1024
 - OpenAI `text-embedding-3-small`: 1536
 
+## 数据加载（参考 Datawhale All-In-RAG）
+
+项目实现了多格式文档加载功能，参考 [Datawhale All-In-RAG 数据加载教程](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter2/04_data_load.md)。
+
+### 支持的文档格式
+
+| 类别 | 格式 | 说明 |
+|------|------|------|
+| **文本文件** | .txt, .md, .json, .xml, .html, .csv, .yaml | 直接读取，保留格式 |
+| **办公文档** | .pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx | Apache Tika 解析提取内容 |
+| **开放文档** | .rtf, .odt, .ods, .odp | OpenDocument 格式支持 |
+
+### 文档元数据提取
+
+上传文档时自动提取以下元数据：
+- `title` - 文档标题
+- `author` - 作者信息
+- `creation-date` - 创建时间
+- `last-modified` - 最后修改时间
+- `page-count` - 页数（PDF/Word）
+- `word-count` - 字数统计
+- `content-type` - MIME 类型
+
+### 技术实现
+
+使用 **Apache Tika** 进行文档解析：
+- 自动检测文件类型
+- 提取纯文本内容
+- 保留文档元数据
+- 支持大文件（10MB+）安全解析
+
+```
+┌─────────────┐    ┌─────────────────┐    ┌─────────────┐
+│  原始文件    │ → │  Apache Tika    │ → │  结构化数据  │
+│ (多种格式)   │    │  - 类型检测      │    │  - 纯文本    │
+│             │    │  - 内容提取      │    │  - 元数据    │
+│             │    │  - 元数据解析    │    │  - 来源信息  │
+└─────────────┘    └─────────────────┘    └─────────────┘
+```
+
 ## 实现细节参考
 
 ### 1. Prompt 模板设计
@@ -417,8 +483,9 @@ felix-ai-rag/
 ## 使用示例
 
 ### 1. 上传知识文档
+
+#### 方式1：直接上传文本
 ```bash
-# 方式1：直接上传文本
 curl -X POST http://localhost:8080/api/v1/rag/documents \
   -H "Content-Type: application/json" \
   -d '{
@@ -426,11 +493,40 @@ curl -X POST http://localhost:8080/api/v1/rag/documents \
     "documentName": "spring-boot-intro.txt",
     "documentType": "txt"
   }'
+```
 
-# 方式2：上传文件
+#### 方式2：上传文本文件
+```bash
 curl -X POST http://localhost:8080/api/v1/rag/documents/file \
   -F "file=@/Users/xxx/documents/intro.md" \
   -F "description=Spring Boot 介绍文档"
+```
+
+#### 方式3：上传 PDF 文档（自动提取内容和元数据）
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/documents/file \
+  -F "file=@/Users/xxx/documents/manual.pdf" \
+  -F "description=产品使用手册"
+
+# 响应示例：
+# 文件 "manual.pdf" 上传并索引成功
+# - 字符数: 32560
+# - 文件类型: application/pdf
+# - 元数据: title=产品使用手册 author=产品经理 page-count=42
+```
+
+#### 方式4：上传 Word 文档
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/documents/file \
+  -F "file=@/Users/xxx/documents/spec.docx" \
+  -F "description=技术规范文档"
+```
+
+#### 方式5：上传 Excel 表格
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/documents/file \
+  -F "file=@/Users/xxx/data/analysis.xlsx" \
+  -F "description=数据分析报表"
 ```
 
 ### 2. 基于文档问答

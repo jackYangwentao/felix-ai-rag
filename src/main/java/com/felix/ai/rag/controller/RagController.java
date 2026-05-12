@@ -105,7 +105,9 @@ public class RagController {
 
     /**
      * 文档上传接口（文件形式）
-     * 支持 txt, md, json, csv 等文本文件
+     * 支持多种文档格式：txt, md, pdf, doc, docx, xls, xlsx 等
+     *
+     * 参考 Datawhale All-In-RAG 数据加载实现
      */
     @PostMapping("/documents/file")
     public ResponseEntity<String> uploadDocumentFile(
@@ -114,12 +116,31 @@ public class RagController {
         log.info("收到文件上传请求: {}", file.getOriginalFilename());
 
         try {
-            String content = documentLoader.loadFromMultipartFile(file);
+            // 使用增强的文档加载器解析文件
+            DocumentLoader.DocumentData documentData = documentLoader.loadDocument(file);
+
             String sourceName = file.getOriginalFilename();
 
-            ragService.indexDocument(content, sourceName);
+            // 索引文档内容到向量存储
+            ragService.indexDocument(documentData.getContent(), sourceName);
 
-            return ResponseEntity.ok("文件 \"" + sourceName + "\" 上传并索引成功，共 " + content.length() + " 字符");
+            // 构建成功响应信息
+            StringBuilder response = new StringBuilder();
+            response.append("文件 \"").append(sourceName).append("\" 上传并索引成功\n");
+            response.append("- 字符数: ").append(documentData.getContent().length()).append("\n");
+            response.append("- 文件类型: ").append(documentData.getContentType()).append("\n");
+
+            // 添加元数据信息
+            if (documentData.getMetadata() != null && !documentData.getMetadata().isEmpty()) {
+                response.append("- 元数据: ");
+                documentData.getMetadata().forEach((key, value) -> {
+                    if (!"detected-type".equals(key)) {
+                        response.append(key).append("=").append(value).append(" ");
+                    }
+                });
+            }
+
+            return ResponseEntity.ok(response.toString().trim());
         } catch (IOException e) {
             log.error("文件上传失败", e);
             return ResponseEntity.badRequest().body("文件读取失败: " + e.getMessage());

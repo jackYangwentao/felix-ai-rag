@@ -19,9 +19,9 @@
     <description>Felix AI RAG Application based on LangChain4J</description>
 
     <properties>
-        <java.version>16</java.version>
-        <maven.compiler.source>16</maven.compiler.source>
-        <maven.compiler.target>16</maven.compiler.target>
+        <java.version>17</java.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <langchain4j.version>0.31.0</langchain4j.version>
     </properties>
