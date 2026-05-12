@@ -11,6 +11,11 @@
   - 文本文件：txt, md, json, xml, html, csv, yaml 等
   - 办公文档：pdf, doc, docx, xls, xlsx, ppt, pptx
   - 自动元数据提取（标题、作者、页数等）
+- **多种分块策略**（参考 Datawhale All-In-RAG 实现）
+  - 递归分块（默认）：分层分隔符优先级处理
+  - 固定大小分块：按目标字符数切分
+  - 语义分块：基于嵌入相似度检测断点
+  - 代码分块：针对编程语言优化
 - 参考 LangChain 最佳实践的 Prompt 模板设计
 - 支持文本上传和文件上传两种方式
 - RESTful API 接口
@@ -432,12 +437,67 @@ rag:
 ====================
 ```
 
-### 2. 分块策略
+### 2. 分块策略（参考 Datawhale All-In-RAG）
 
-使用 `RecursiveCharacterTextSplitter` 递归分割：
-- **Chunk Size**: 1000（参考文档使用4000，本地模型建议较小值）
-- **Chunk Overlap**: 200（保持上下文连贯性）
-- **分隔符优先级**: `["\n\n", "\n", " ", ""]`
+支持多种分块策略，参考 [Datawhale All-In-RAG 文本分块教程](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter2/05_text_chunking.md)。
+
+| 策略 | 名称 | 适用场景 |
+|------|------|----------|
+| `recursive` | 递归字符分块 | **默认**，通用场景，优先保持语义结构 |
+| `fixed` | 固定大小分块 | 快速原型、日志处理 |
+| `semantic` | 语义分块 | 高质量语义检索，主题聚焦 |
+| `code` | 代码分块 | 代码文件，按类/函数分割 |
+
+**配置示例：**
+```yaml
+rag:
+  chunk:
+    strategy: recursive   # 切换策略: recursive | fixed | semantic | code
+    size: 1000
+    overlap: 200
+```
+
+#### 递归分块（默认）
+分层分隔符优先级：段落 → 句子 → 单词 → 字符
+```yaml
+rag:
+  chunk:
+    strategy: recursive
+    size: 1000
+    overlap: 200
+```
+
+#### 固定大小分块
+```yaml
+rag:
+  chunk:
+    strategy: fixed
+    size: 1000
+    overlap: 200
+    separator: "\n\n"   # 段落分隔符
+```
+
+#### 语义分块
+基于嵌入向量相似度检测断点，主题聚焦度高。
+```yaml
+rag:
+  chunk:
+    strategy: semantic
+    semantic:
+      threshold-type: percentile      # percentile | standard_deviation | interquartile
+      threshold-amount: 95.0          # 百分位阈值
+      buffer-size: 1                  # 上下文缓冲
+```
+
+#### 代码分块
+针对编程语言优化，按类/函数分割。
+```yaml
+rag:
+  chunk:
+    strategy: code
+    size: 500
+    overlap: 50
+```
 
 ### 3. 检索策略
 

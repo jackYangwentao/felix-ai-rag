@@ -1,11 +1,9 @@
 package com.felix.ai.rag.service;
 
-import dev.langchain4j.data.document.Document;
-import dev.langchain4j.data.document.DocumentSplitter;
-import dev.langchain4j.data.document.splitter.DocumentSplitters;
+import com.felix.ai.rag.chunker.ChunkerFactory;
+import com.felix.ai.rag.chunker.TextChunker;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.chat.ChatLanguageModel;
@@ -17,10 +15,8 @@ import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -38,12 +34,7 @@ public class RagService {
     private final EmbeddingModel embeddingModel;
     private final EmbeddingStore<TextSegment> embeddingStore;
     private final ContentRetriever contentRetriever;
-
-    @Value("${rag.chunk-size:500}")
-    private int chunkSize;
-
-    @Value("${rag.chunk-overlap:50}")
-    private int chunkOverlap;
+    private final ChunkerFactory chunkerFactory;
 
     /**
      * RAG Prompt 模板 - 参考LangChain最佳实践
@@ -72,24 +63,25 @@ public class RagService {
 
     /**
      * 索引文档到向量存储
+     * 支持多种分块策略：固定大小、递归、语义、代码等
      *
      * @param content    文档内容
      * @param sourceName 文档来源名称
      */
     public void indexDocument(String content, String sourceName) {
-        log.info("开始索引文档: {}", sourceName);
+        log.info("开始索引文档: {}，使用分块策略: {}", sourceName, chunkerFactory.getCurrentStrategy());
 
-        // 创建文档
-        Document document = Document.from(content);
+        // 使用分块器工厂创建分块器
+        TextChunker chunker = chunkerFactory.createChunker();
 
         // 分割文档
-        DocumentSplitter splitter = DocumentSplitters.recursive(chunkSize, chunkOverlap);
-        List<TextSegment> segments = splitter.split(document);
+        List<String> chunks = chunker.chunk(content);
 
-        log.info("文档分割为 {} 个片段", segments.size());
+        log.info("文档分割为 {} 个片段，使用策略: {}", chunks.size(), chunker.getStrategyName());
 
         // 为每个片段生成嵌入并存储
-        for (TextSegment segment : segments) {
+        for (String chunk : chunks) {
+            TextSegment segment = TextSegment.from(chunk);
             Embedding embedding = embeddingModel.embed(segment).content();
             embeddingStore.add(embedding, segment);
         }
