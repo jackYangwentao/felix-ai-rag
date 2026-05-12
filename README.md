@@ -16,6 +16,10 @@
   - 固定大小分块：按目标字符数切分
   - 语义分块：基于嵌入相似度检测断点
   - 代码分块：针对编程语言优化
+- **多模态支持**（参考 Datawhale All-In-RAG 实现）
+  - 图像理解：使用视觉模型（llava）生成图像描述
+  - 图像问答：基于图像内容进行问答
+  - 图像索引：将图像描述索引到知识库
 - 参考 LangChain 最佳实践的 Prompt 模板设计
 - 支持文本上传和文件上传两种方式
 - RESTful API 接口
@@ -215,6 +219,52 @@ curl "http://localhost:8080/api/v1/rag/search?query=查询关键词"
   "相关文档片段2...",
   "相关文档片段3..."
 ]
+```
+
+#### 多模态 - 图像描述
+上传图像并获取AI生成的描述。
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/multimodal/describe \
+  -F "image=@/path/to/image.jpg" \
+  -F "prompt=请详细描述这张图片"
+```
+
+**参数说明：**
+- `image` (必填): 图像文件，支持 jpg, png, gif, webp
+- `prompt` (可选): 自定义描述提示词
+
+**响应示例：**
+```json
+{
+  "success": true,
+  "filename": "image.jpg",
+  "description": "这张图片展示了一座山峰...",
+  "metadata": {
+    "width": 1920,
+    "height": 1080,
+    "format": "JPEG"
+  }
+}
+```
+
+#### 多模态 - 图像问答
+基于图像内容进行问答。
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/multimodal/chat \
+  -F "image=@/path/to/image.jpg" \
+  -F "question=这张图片中有哪些物体？"
+```
+
+**参数说明：**
+- `image` (必填): 图像文件
+- `question` (可选): 关于图像的问题
+
+#### 多模态 - 上传图像到知识库
+将图像描述索引到知识库，支持后续检索。
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/multimodal/images \
+  -F "image=@/path/to/image.jpg" \
+  -F "prompt=请描述这张图片的主要内容"
 ```
 
 ## 配置文件
@@ -499,7 +549,41 @@ rag:
     overlap: 50
 ```
 
-### 3. 检索策略
+### 3. 多模态支持（参考 Datawhale All-In-RAG）
+
+项目实现了多模态功能，参考 Datawhale All-In-RAG 多模态嵌入教程。
+
+**支持的模态：**
+- **图像理解**：使用视觉模型生成图像描述
+- **图像问答**：基于图像内容进行问答
+- **图像索引**：将图像描述加入知识库
+
+**支持的图像格式：**
+- JPEG / JPG
+- PNG
+- GIF
+- WebP
+
+**配置：**
+```yaml
+rag:
+  multimodal:
+    enabled: true                 # 启用多模态功能
+    vision-model: llava           # 视觉模型名称
+```
+
+**支持的视觉模型（Ollama）：**
+- `llava` - LLaVA 1.5 视觉模型
+- `llava-phi3` - 基于 Phi-3 的轻量级视觉模型
+- `bakllava` - BakLLaVA 视觉模型
+- `llava-llama3` - 基于 Llama 3 的视觉模型
+
+**安装视觉模型：**
+```bash
+ollama pull llava
+```
+
+### 4. 检索策略
 
 - **相似度搜索**: 基于向量相似度
 - **Top-k**: 取最相关的3条内容
