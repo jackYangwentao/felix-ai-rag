@@ -74,7 +74,9 @@ public class DocumentLoader {
      * 检查文件类型是否支持
      */
     private boolean isSupportedFile(String filename) {
-        if (filename == null) return false;
+        if (filename == null) {
+            return false;
+        }
         String lowerName = filename.toLowerCase();
         for (String ext : SUPPORTED_EXTENSIONS) {
             if (lowerName.endsWith("." + ext)) {

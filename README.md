@@ -97,36 +97,35 @@ java -jar target/felix-ai-rag-1.0.0.jar
 curl http://localhost:8080/api/v1/rag/health
 ```
 
-#### 上传文档（文本形式）
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/documents \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "这是要索引的文档内容...",
-    "documentName": "文档名称"
-  }'
-```
-
-#### 上传文档（文件形式）
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/documents/file \
-  -F "file=@/path/to/your/document.txt" \
-  -F "description=文档描述"
-```
-
-支持的文件类型：txt, md, markdown, json, xml, html, csv, yaml, sql 等
-
 #### RAG 问答
+基于检索到的文档内容回答问题。
 ```bash
 curl -X POST http://localhost:8080/api/v1/rag/chat \
   -H "Content-Type: application/json" \
   -d '{
     "message": "你的问题",
-    "useRag": true
+    "useRag": true,
+    "sessionId": null
   }'
 ```
 
+**参数说明：**
+- `message` (必填): 用户问题
+- `useRag` (必填): 是否使用 RAG，设为 `true`
+- `sessionId` (可选): 会话ID，不传则自动生成
+
+**响应示例：**
+```json
+{
+  "answer": "根据文档内容，答案是...",
+  "sessionId": "a1b2c3d4",
+  "sources": ["相关文档片段1...", "相关文档片段2..."],
+  "processingTimeMs": 2350
+}
+```
+
 #### 普通聊天（不使用RAG）
+直接与 LLM 对话，不检索文档。
 ```bash
 curl -X POST http://localhost:8080/api/v1/rag/chat/direct \
   -H "Content-Type: application/json" \
@@ -135,9 +134,56 @@ curl -X POST http://localhost:8080/api/v1/rag/chat/direct \
   }'
 ```
 
+**参数说明：**
+- `message` (必填): 用户问题
+
+#### 上传文档（文本形式）
+将文本内容索引到向量存储。
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/documents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "这是要索引的文档内容...",
+    "documentName": "文档名称",
+    "documentType": "txt",
+    "description": "文档描述"
+  }'
+```
+
+**参数说明：**
+- `content` (必填): 文档文本内容
+- `documentName` (可选): 文档名称，用于标识来源
+- `documentType` (可选): 文档类型，如 txt, md, json
+- `description` (可选): 文档描述
+
+#### 上传文档（文件形式）
+上传文件并自动提取内容索引。
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/documents/file \
+  -F "file=@/path/to/your/document.txt" \
+  -F "description=文档描述"
+```
+
+**参数说明：**
+- `file` (必填): 文件，支持 txt, md, markdown, json, xml, html, csv, yaml, sql 等
+- `description` (可选): 文件描述
+
 #### 检索内容（不生成回答）
+仅检索相关文档片段，不调用 LLM 生成回答。
 ```bash
 curl "http://localhost:8080/api/v1/rag/search?query=查询关键词"
+```
+
+**参数说明：**
+- `query` (必填): 检索关键词/问题
+
+**响应示例：**
+```json
+[
+  "相关文档片段1...",
+  "相关文档片段2...",
+  "相关文档片段3..."
+]
 ```
 
 ## 配置文件
@@ -376,13 +422,15 @@ felix-ai-rag/
 curl -X POST http://localhost:8080/api/v1/rag/documents \
   -H "Content-Type: application/json" \
   -d '{
-    "content": "Spring Boot 是一个用于简化 Spring 应用开发的框架...",
-    "documentName": "spring-boot-intro.txt"
+    "content": "Spring Boot 是一个用于简化 Spring 应用开发的框架。它提供了自动配置、起步依赖、内嵌服务器等特性，让开发者可以快速搭建和运行 Spring 应用。",
+    "documentName": "spring-boot-intro.txt",
+    "documentType": "txt"
   }'
 
 # 方式2：上传文件
 curl -X POST http://localhost:8080/api/v1/rag/documents/file \
-  -F "file=@/Users/xxx/documents/intro.md"
+  -F "file=@/Users/xxx/documents/intro.md" \
+  -F "description=Spring Boot 介绍文档"
 ```
 
 ### 2. 基于文档问答
@@ -392,6 +440,20 @@ curl -X POST http://localhost:8080/api/v1/rag/chat \
   -d '{
     "message": "Spring Boot 有什么特点？",
     "useRag": true
+  }'
+```
+
+### 3. 检索相关内容
+```bash
+curl "http://localhost:8080/api/v1/rag/search?query=Spring Boot 特点"
+```
+
+### 4. 直接对话（不使用知识库）
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/chat/direct \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "你好，请介绍一下自己"
   }'
 ```
 
