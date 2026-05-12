@@ -10,7 +10,7 @@ langchain4j:
   ollama:
     base-url: http://localhost:11434
     chat-model:
-      model-name: llama3.1
+      model-name: llama3.2
       temperature: 0.7
       timeout: 60s
     embedding-model:
@@ -23,6 +23,38 @@ rag:
   chunk-overlap: 200      # 分块重叠大小（保持上下文连贯性）
   max-results: 3          # 检索结果数量（参考文档取Top-3）
   min-score: 0.7          # 最小相似度分数
+  embedding-dimension: 768  # 嵌入向量维度 (nomic-embed-text = 768, text-embedding-3-small = 1536)
+
+  # 向量存储配置
+  # 支持的类型: memory(默认), redis, chroma, qdrant, pgvector
+  vector-store:
+    type: memory
+
+    # Redis 配置 (type: redis)
+    redis:
+      host: localhost
+      port: 6379
+      index-name: rag-index
+
+    # Chroma 配置 (type: chroma)
+    chroma:
+      base-url: http://localhost:8000
+      collection-name: rag-collection
+
+    # Qdrant 配置 (type: qdrant)
+    qdrant:
+      host: localhost
+      port: 6334
+      collection-name: rag-collection
+
+    # PGVector 配置 (type: pgvector)
+    pgvector:
+      host: localhost
+      port: 5432
+      database: postgres
+      user: postgres
+      password: postgres
+      table: embedding_store
 
 # Logging
 logging:

@@ -18,13 +18,14 @@
 - Ollama（本地模型服务）
 - Java 16+
 - Maven
+- 多种向量数据库（内存/Redis/Chroma/Qdrant/PGVector）
 
 ## RAG 架构流程
 
 ```
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
 │  原始文档    │ → │  文本分块    │ → │  嵌入向量化  │ → │  向量索引    │
-│ (txt/md等)  │    │(Recursive   │    │(Ollama嵌入) │    │(InMemory)   │
+│ (txt/md等)  │    │(Recursive   │    │(Ollama嵌入) │    │(向量数据库)  │
 │             │    │ Splitter)   │    │             │    │             │
 └─────────────┘    └─────────────┘    └─────────────┘    └──────┬──────┘
                                                                   │
@@ -159,6 +160,141 @@ rag:
   max-results: 3        # 检索结果数量（Top-k）
   min-score: 0.7        # 最小相似度分数
 ```
+
+## 向量数据库配置
+
+项目支持 5 种向量数据库，可通过配置灵活切换：
+
+| 类型 | 部署方式 | 数据持久化 | 适用场景 |
+|------|----------|------------|----------|
+| `memory` | 内置 | ❌ 应用重启丢失 | 快速测试、开发调试 |
+| `redis` | Docker | ✅ 持久化 | 生产环境、高性能需求 |
+| `chroma` | Docker | ✅ 持久化 | 轻量级向量存储 |
+| `qdrant` | Docker | ✅ 持久化 | 高性能检索、过滤查询 |
+| `pgvector` | Docker | ✅ 持久化 | 已有 PostgreSQL 环境 |
+
+### 配置切换
+
+修改 `application.yml`：
+
+```yaml
+rag:
+  vector-store:
+    type: redis   # 切换为: memory | redis | chroma | qdrant | pgvector
+```
+
+### 1. Memory（默认）
+
+无需额外部署，适合开发和测试。
+
+```yaml
+rag:
+  vector-store:
+    type: memory
+```
+
+### 2. Redis
+
+**启动 Redis：**
+```bash
+docker run -d \
+  --name redis-vector \
+  -p 6379:6379 \
+  redis/redis-stack-server:latest
+```
+
+**配置：**
+```yaml
+rag:
+  vector-store:
+    type: redis
+    redis:
+      host: localhost
+      port: 6379
+      index-name: rag-index
+```
+
+### 3. Chroma
+
+**启动 Chroma：**
+```bash
+docker run -d \
+  --name chroma \
+  -p 8000:8000 \
+  chromadb/chroma:latest
+```
+
+**配置：**
+```yaml
+rag:
+  vector-store:
+    type: chroma
+    chroma:
+      base-url: http://localhost:8000
+      collection-name: rag-collection
+```
+
+### 4. Qdrant
+
+**启动 Qdrant：**
+```bash
+docker run -d \
+  --name qdrant \
+  -p 6334:6334 \
+  -p 6333:6333 \
+  -v $(pwd)/qdrant_storage:/qdrant/storage \
+  qdrant/qdrant:latest
+```
+
+**配置：**
+```yaml
+rag:
+  vector-store:
+    type: qdrant
+    qdrant:
+      host: localhost
+      port: 6334
+      collection-name: rag-collection
+```
+
+### 5. PGVector
+
+**启动 PostgreSQL + PGVector：**
+```bash
+docker run -d \
+  --name pgvector \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5432:5432 \
+  ankane/pgvector:latest
+```
+
+**配置：**
+```yaml
+rag:
+  vector-store:
+    type: pgvector
+    pgvector:
+      host: localhost
+      port: 5432
+      database: postgres
+      user: postgres
+      password: postgres
+      table: embedding_store
+```
+
+### 向量维度配置
+
+不同嵌入模型需要设置对应的向量维度：
+
+```yaml
+rag:
+  embedding-dimension: 768   # nomic-embed-text = 768
+```
+
+常见模型维度：
+- `nomic-embed-text`: 768
+- `mxbai-embed-large`: 1024
+- OpenAI `text-embedding-3-small`: 1536
 
 ## 实现细节参考
 

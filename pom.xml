@@ -71,11 +71,39 @@
             <version>${langchain4j.version}</version>
         </dependency>
 
-        <!-- Vector Store - Redis (Optional) -->
+        <!-- Vector Store - Redis -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-redis</artifactId>
             <version>${langchain4j.version}</version>
+        </dependency>
+
+        <!-- Vector Store - Chroma -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-chroma</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+
+        <!-- Vector Store - Qdrant -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-qdrant</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+
+        <!-- Vector Store - PGVector -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-pgvector</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+
+        <!-- PostgreSQL Driver (for PGVector) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- Lombok -->
