@@ -174,9 +174,41 @@ curl -X POST http://localhost:8080/api/v1/rag/chat \
 ```
 
 #### 上传文档
+
+**方式1：使用curl上传文件**
 ```bash
 curl -X POST http://localhost:8080/api/v1/rag/documents/file \
   -F "file=@/path/to/document.pdf"
+```
+
+**方式2：手动复制后上传（解决中文文件名问题）**
+```bash
+# 1. 复制文件到项目目录（避免中文路径问题）
+cp "/Users/yangwentao01/Downloads/k8s命令操作手册.pdf" ~/Documents/wtyang/felix-ai-rag/
+
+# 2. 使用curl上传
+cd ~/Documents/wtyang/felix-ai-rag
+curl -X POST http://localhost:8080/api/v1/rag/documents/file \
+  -F "file=@k8s命令操作手册.pdf;type=application/pdf"
+```
+
+**方式3：使用API工具（Postman等）**
+```
+POST http://localhost:8080/api/v1/rag/documents/file
+Content-Type: multipart/form-data
+file: [选择文件]
+```
+
+**方式4：上传文本内容（无需文件）**
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/documents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "粘贴文档文本内容...",
+    "documentName": "k8s命令操作手册.txt",
+    "documentType": "text",
+    "description": "Kubernetes命令手册"
+  }'
 ```
 
 ### 查询重写接口

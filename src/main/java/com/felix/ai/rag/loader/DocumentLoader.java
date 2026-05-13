@@ -75,27 +75,25 @@ public class DocumentLoader {
         String filename = file.getOriginalFilename();
         log.info("正在加载文档: {}, 大小: {} bytes", filename, file.getSize());
 
-        try (InputStream inputStream = file.getInputStream()) {
-            // 使用 Tika 检测 MIME 类型
-            String contentType = tika.detect(inputStream);
-            log.debug("检测到文件类型: {} -> {}", filename, contentType);
+        // 读取文件内容到字节数组（支持 mark/reset）
+        byte[] fileBytes = file.getBytes();
 
-            // 重置流位置（Tika 检测后需要重新读取）
-            inputStream.reset();
+        // 使用 Tika 检测 MIME 类型
+        String contentType = tika.detect(fileBytes);
+        log.debug("检测到文件类型: {} -> {}", filename, contentType);
 
-            // 根据文件类型选择合适的解析方式
-            DocumentData documentData;
-            if (isTextFile(contentType, filename)) {
-                documentData = parseTextFile(inputStream, filename, contentType, file.getSize());
-            } else {
-                documentData = parseBinaryFile(inputStream, filename, contentType, file.getSize());
-            }
-
-            log.info("文档加载成功: {}, 字符数: {}, 类型: {}",
-                    filename, documentData.getContent().length(), contentType);
-
-            return documentData;
+        // 根据文件类型选择合适的解析方式
+        DocumentData documentData;
+        if (isTextFile(contentType, filename)) {
+            documentData = parseTextFile(fileBytes, filename, contentType, file.getSize());
+        } else {
+            documentData = parseBinaryFile(fileBytes, filename, contentType, file.getSize());
         }
+
+        log.info("文档加载成功: {}, 字符数: {}, 类型: {}",
+                filename, documentData.getContent().length(), contentType);
+
+        return documentData;
     }
 
     /**
@@ -125,12 +123,9 @@ public class DocumentLoader {
     /**
      * 解析文本文件
      */
-    private DocumentData parseTextFile(InputStream inputStream, String filename,
+    private DocumentData parseTextFile(byte[] fileBytes, String filename,
                                        String contentType, long fileSize) throws IOException {
-        String content = new BufferedReader(
-                new InputStreamReader(inputStream, StandardCharsets.UTF_8))
-                .lines()
-                .collect(Collectors.joining("\n"));
+        String content = new String(fileBytes, StandardCharsets.UTF_8);
 
         Map<String, String> metadata = new HashMap<>();
         metadata.put("detected-type", contentType);
@@ -149,7 +144,7 @@ public class DocumentLoader {
      * 解析二进制文件（PDF、Word、Excel 等）
      * 使用 Apache Tika 提取内容
      */
-    private DocumentData parseBinaryFile(InputStream inputStream, String filename,
+    private DocumentData parseBinaryFile(byte[] fileBytes, String filename,
                                          String contentType, long fileSize) throws IOException {
         Metadata tikaMetadata = new Metadata();
         tikaMetadata.set("resourceName", filename);
@@ -161,7 +156,7 @@ public class DocumentLoader {
         ParseContext context = new ParseContext();
         context.set(Parser.class, parser);
 
-        try {
+        try (InputStream inputStream = new java.io.ByteArrayInputStream(fileBytes)) {
             parser.parse(inputStream, handler, tikaMetadata, context);
 
             String content = handler.toString();
