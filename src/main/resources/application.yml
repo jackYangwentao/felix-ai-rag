@@ -136,6 +136,11 @@ rag:
     use-sentence-window: true     # 启用句子窗口
     use-rerank: false             # 启用重排序（会增加LLM调用）
 
+  # Self-Query配置
+  # 参考 Datawhale All-In-RAG 查询构建章节
+  self-query:
+    enabled: true                 # 启用Self-Query检索
+
 # Logging
 logging:
   level:

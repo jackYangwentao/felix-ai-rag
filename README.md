@@ -1,34 +1,39 @@
 # Felix AI RAG
 
-基于 LangChain4J 的 Spring Boot RAG (Retrieval-Augmented Generation) 应用，参考 [Datawhale All-In-RAG](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter1/03_get_start_rag.md) 教程实现。
+基于 LangChain4J 的 Spring Boot RAG (Retrieval-Augmented Generation) 应用，深度参考 [Datawhale All-In-RAG](https://github.com/datawhalechina/all-in-rag) 教程实现，整合了索引优化、查询构建、混合搜索等高级RAG技术。
 
 ## 功能特性
 
+### 核心RAG能力
 - 基于 LangChain4J 框架的 Java 实现
 - 支持本地大模型（通过 Ollama）
 - 完整的 RAG 流程：文档加载 → 分块 → 向量化 → 索引 → 检索 → 生成
-- **多格式文档加载**（参考 Datawhale All-In-RAG 实现）
-  - 文本文件：txt, md, json, xml, html, csv, yaml 等
-  - 办公文档：pdf, doc, docx, xls, xlsx, ppt, pptx
-  - 自动元数据提取（标题、作者、页数等）
-- **多种分块策略**（参考 Datawhale All-In-RAG 实现）
-  - 递归分块（默认）：分层分隔符优先级处理
-  - 固定大小分块：按目标字符数切分
-  - 语义分块：基于嵌入相似度检测断点
-  - 代码分块：针对编程语言优化
-- **多模态支持**（参考 Datawhale All-In-RAG 实现）
-  - 图像理解：使用视觉模型（llava）生成图像描述
-  - 图像问答：基于图像内容进行问答
-  - 图像索引：将图像描述索引到知识库
-- **高级检索功能**（参考 Datawhale All-In-RAG 和 Milvus 优化）
-  - 重排序（Reranking）：两阶段检索，提高结果相关性
-  - 多查询搜索：使用多个查询提高召回率
-  - 批量搜索：并行处理多个查询，提高吞吐量
-  - 多样性搜索（MMR）：确保结果多样性，避免重复
-  - 索引类型优化建议：HNSW、IVF、FLAT 选择指南
-- 参考 LangChain 最佳实践的 Prompt 模板设计
-- 支持文本上传和文件上传两种方式
-- RESTful API 接口
+
+### 文档处理
+- **多格式文档加载**：txt, md, pdf, doc, docx, xls, xlsx, ppt, pptx 等
+- **自动元数据提取**：标题、作者、页数、创建时间等
+- **多种分块策略**：递归、固定大小、语义、代码、句子窗口
+
+### 索引优化（参考 Datawhale All-In-RAG）
+- **句子窗口检索**：小块索引保证精度，窗口扩展保证上下文
+- **元数据过滤**：支持按年份、部门、分类等结构化过滤
+- **混合检索**：稠密向量检索 + 稀疏关键词检索（BM25）
+- **多路召回**：RRF融合排序、加权线性组合
+
+### 查询优化
+- **Self-Query**：自然语言自动解析为语义查询+元数据过滤
+- **查询重写**：意图识别驱动的查询优化
+- **查询扩展**：多查询变体、HyDE假设文档
+
+### 检索优化
+- **重排序（Reranking）**：两阶段检索提高相关性
+- **MMR多样性搜索**：确保结果多样性
+- **批量搜索**：并行处理多个查询
+
+### 多模态支持
+- **图像理解**：使用视觉模型生成描述
+- **图像问答**：基于图像内容问答
+- **图像索引**：图像描述加入知识库
 
 ## 技术栈
 
@@ -38,824 +43,71 @@
 - Java 17+
 - Maven
 - 多种向量数据库（内存/Redis/Chroma/Qdrant/PGVector）
-- Apache Tika（文档解析）
-- 重排序（Reranking）支持
 
 ## RAG 架构流程
 
 ```
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
 │  原始文档    │ → │  文本分块    │ → │  嵌入向量化  │ → │  向量索引    │
-│ (txt/md等)  │    │(Recursive   │    │(Ollama嵌入) │    │(向量数据库)  │
-│             │    │ Splitter)   │    │             │    │             │
+│ (多种格式)   │    │(多种策略)   │    │(Ollama嵌入) │    │(向量数据库)  │
 └─────────────┘    └─────────────┘    └─────────────┘    └──────┬──────┘
                                                                   │
-                              用户问题 ──────────────────────────┤
-                              (Query)                            │
-                                                                  ↓
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   最终答案   │ ← │  LLM生成    │ ← │  提示工程    │ ← │  语义检索    │
-│  (Answer)   │    │(Ollama本地) │    │(Context+    │    │(Top-3相似)  │
-│             │    │             │    │  Question)  │    │             │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-```
-
-## 环境准备
-
-### 1. 安装 Ollama
-
-```bash
-# macOS
-brew install ollama
-
-# 或从官网下载：https://ollama.com/download
-```
-
-### 2. 拉取模型
-
-```bash
-# 拉取聊天模型
-ollama pull llama3.1
-
-# 拉取嵌入模型
-ollama pull nomic-embed-text
-```
-
-### 3. 启动 Ollama 服务
-
-```bash
-ollama serve
+┌─────────────────────────────────────────────────────────────────┘
+│
+│  用户查询 → [查询重写] → [Self-Query解析] → [查询扩展]
+│                                           ↓
+│                              ┌──────────────────────┐
+│                              │   混合检索 (Hybrid)   │
+│                              │  ┌────────┐ ┌──────┐ │
+│                              │  │稠密检索│ │稀疏检索│ │
+│                              │  │(向量) │ │(BM25)│ │
+│                              │  └───┬────┘ └──┬───┘ │
+│                              │      └────┬────┘     │
+│                              │      [RRF融合排序]    │
+│                              └───────────┼──────────┘
+│                                          ↓
+│  最终答案 ← LLM生成 ← 提示工程 ← [句子窗口] ← [重排序] ← 检索结果
+│
 ```
 
 ## 快速开始
 
-### 1. 构建项目
+### 1. 环境准备
 
 ```bash
-cd felix-ai-rag
-export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-16.0.2.jdk/Contents/Home
-mvn clean install
+# 安装 Ollama
+brew install ollama
+
+# 拉取模型
+ollama pull llama3.1        # 聊天模型
+ollama pull nomic-embed-text # 嵌入模型
+
+# 启动服务
+ollama serve
 ```
 
-### 2. 运行应用
+### 2. 构建运行
 
 ```bash
-export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-16.0.2.jdk/Contents/Home
+# 构建
+export JAVA_HOME=/Users/yangwentao01/Library/Java/JavaVirtualMachines/ms-17.0.19/Contents/Home
+mvn clean install
+
+# 运行
 mvn spring-boot:run
 ```
 
-或
+### 3. 验证服务
 
-```bash
-export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-16.0.2.jdk/Contents/Home
-java -jar target/felix-ai-rag-1.0.0.jar
-```
-
-### 3. API 接口
-
-#### 健康检查
 ```bash
 curl http://localhost:8080/api/v1/rag/health
 ```
 
+## API 使用指南
+
+### 基础接口
+
 #### RAG 问答
-基于检索到的文档内容回答问题。
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "你的问题",
-    "useRag": true,
-    "sessionId": null
-  }'
-```
-
-**参数说明：**
-- `message` (必填): 用户问题
-- `useRag` (必填): 是否使用 RAG，设为 `true`
-- `sessionId` (可选): 会话ID，不传则自动生成
-
-**响应示例：**
-```json
-{
-  "answer": "根据文档内容，答案是...",
-  "sessionId": "a1b2c3d4",
-  "sources": ["相关文档片段1...", "相关文档片段2..."],
-  "processingTimeMs": 2350
-}
-```
-
-#### 普通聊天（不使用RAG）
-直接与 LLM 对话，不检索文档。
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/chat/direct \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "你好"
-  }'
-```
-
-**参数说明：**
-- `message` (必填): 用户问题
-
-#### 上传文档（文本形式）
-将文本内容索引到向量存储。
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/documents \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "这是要索引的文档内容...",
-    "documentName": "文档名称",
-    "documentType": "txt",
-    "description": "文档描述"
-  }'
-```
-
-**参数说明：**
-- `content` (必填): 文档文本内容
-- `documentName` (可选): 文档名称，用于标识来源
-- `documentType` (可选): 文档类型，如 txt, md, json
-- `description` (可选): 文档描述
-
-#### 上传文档（文件形式）
-上传文件并自动提取内容和元数据。支持多种格式：
-- **文本文件**: txt, md, markdown, json, xml, html, csv, yaml, sql
-- **办公文档**: pdf, doc, docx, xls, xlsx, ppt, pptx
-
-```bash
-# 上传 PDF 文件
-curl -X POST http://localhost:8080/api/v1/rag/documents/file \
-  -F "file=@/path/to/document.pdf" \
-  -F "description=产品手册"
-
-# 上传 Word 文档
-curl -X POST http://localhost:8080/api/v1/rag/documents/file \
-  -F "file=@/path/to/document.docx" \
-  -F "description=技术规范"
-
-# 上传 Excel 表格
-curl -X POST http://localhost:8080/api/v1/rag/documents/file \
-  -F "file=@/path/to/data.xlsx" \
-  -F "description=数据分析"
-```
-
-**参数说明：**
-- `file` (必填): 文件，支持多种格式
-- `description` (可选): 文件描述
-
-**响应示例：**
-```
-文件 "document.pdf" 上传并索引成功
-- 字符数: 15234
-- 文件类型: application/pdf
-- 元数据: title=产品手册 author=张三 page-count=15
-```
-
-#### 检索内容（不生成回答）
-仅检索相关文档片段，不调用 LLM 生成回答。
-```bash
-curl "http://localhost:8080/api/v1/rag/search?query=查询关键词"
-```
-
-**参数说明：**
-- `query` (必填): 检索关键词/问题
-
-**响应示例：**
-```json
-[
-  "相关文档片段1...",
-  "相关文档片段2...",
-  "相关文档片段3..."
-]
-```
-
-#### 多模态 - 图像描述
-上传图像并获取AI生成的描述。
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/multimodal/describe \
-  -F "image=@/path/to/image.jpg" \
-  -F "prompt=请详细描述这张图片"
-```
-
-**参数说明：**
-- `image` (必填): 图像文件，支持 jpg, png, gif, webp
-- `prompt` (可选): 自定义描述提示词
-
-**响应示例：**
-```json
-{
-  "success": true,
-  "filename": "image.jpg",
-  "description": "这张图片展示了一座山峰...",
-  "metadata": {
-    "width": 1920,
-    "height": 1080,
-    "format": "JPEG"
-  }
-}
-```
-
-#### 多模态 - 图像问答
-基于图像内容进行问答。
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/multimodal/chat \
-  -F "image=@/path/to/image.jpg" \
-  -F "question=这张图片中有哪些物体？"
-```
-
-**参数说明：**
-- `image` (必填): 图像文件
-- `question` (可选): 关于图像的问题
-
-#### 多模态 - 上传图像到知识库
-将图像描述索引到知识库，支持后续检索。
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/multimodal/images \
-  -F "image=@/path/to/image.jpg" \
-  -F "prompt=请描述这张图片的主要内容"
-```
-
-#### 增强搜索（支持重排序）
-使用两阶段检索（向量检索 + LLM重排序）提高结果相关性。
-```bash
-curl "http://localhost:8080/api/v1/rag/search/enhanced?query=Spring Boot&maxResults=5&rerank=true"
-```
-
-**参数说明：**
-- `query` (必填): 检索关键词
-- `maxResults` (可选): 返回结果数，默认3
-- `minScore` (可选): 最小相似度分数，默认0.7
-- `rerank` (可选): 是否启用重排序，默认false
-
-**响应示例：**
-```json
-{
-  "query": "Spring Boot",
-  "results": [
-    {
-      "content": "Spring Boot 提供了自动配置...",
-      "vectorScore": 0.85,
-      "rerankScore": 9.2
-    }
-  ],
-  "totalResults": 1,
-  "usedRerank": true
-}
-```
-
-#### 多查询搜索
-使用多个相关查询提高召回率，自动合并去重并重排序。
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/search/multi-query \
-  -H "Content-Type: application/json" \
-  -d '{
-    "queries": ["Spring Boot特点", "Spring Boot优势", "Spring Boot功能"],
-    "maxResults": 5
-  }'
-```
-
-**参数说明：**
-- `queries` (必填): 多个查询字符串数组
-- `maxResults` (可选): 返回结果数，默认5
-
-#### 批量搜索（参考 Milvus 优化）
-同时处理多个查询，适合批量处理场景。
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/search/batch \
-  -H "Content-Type: application/json" \
-  -d '{
-    "queries": ["查询1", "查询2", "查询3"],
-    "maxResults": 3
-  }'
-```
-
-**参数说明：**
-- `queries` (必填): 查询字符串数组
-- `maxResults` (可选): 每个查询的结果数，默认3
-
-**响应示例：**
-```json
-{
-  "查询1": {
-    "query": "查询1",
-    "results": [...],
-    "totalResults": 3
-  },
-  "查询2": {
-    "query": "查询2",
-    "results": [...],
-    "totalResults": 3
-  }
-}
-```
-
-#### 多样性搜索（参考 Milvus MMR）
-使用 MMR (Maximal Marginal Relevance) 算法确保结果多样性，避免结果过于相似。
-```bash
-curl "http://localhost:8080/api/v1/rag/search/diverse?query=Spring Boot&maxResults=5&diversity=0.5"
-```
-
-**参数说明：**
-- `query` (必填): 检索关键词
-- `maxResults` (可选): 返回结果数，默认5
-- `diversity` (可选): 多样性因子（0-1），越大多样性越高，默认0.5
-
-**适用场景：**
-- 需要不同角度的答案
-- 避免重复内容
-- 探索性搜索
-
-## 配置文件
-
-`application.yml` 中可配置：
-
-```yaml
-langchain4j:
-  ollama:
-    base-url: http://localhost:11434
-    chat-model:
-      model-name: llama3.1    # 聊天模型
-      temperature: 0.7
-    embedding-model:
-      model-name: nomic-embed-text  # 嵌入模型
-
-rag:
-  chunk-size: 1000      # 文档分块大小
-  chunk-overlap: 200    # 分块重叠大小（保持上下文连贯）
-  max-results: 3        # 检索结果数量（Top-k）
-  min-score: 0.7        # 最小相似度分数
-```
-
-## 向量数据库配置
-
-项目支持 5 种向量数据库，可通过配置灵活切换：
-
-| 类型 | 部署方式 | 数据持久化 | 适用场景 |
-|------|----------|------------|----------|
-| `memory` | 内置 | ❌ 应用重启丢失 | 快速测试、开发调试 |
-| `redis` | Docker | ✅ 持久化 | 生产环境、高性能需求 |
-| `chroma` | Docker | ✅ 持久化 | 轻量级向量存储 |
-| `qdrant` | Docker | ✅ 持久化 | 高性能检索、过滤查询 |
-| `pgvector` | Docker | ✅ 持久化 | 已有 PostgreSQL 环境 |
-
-### 配置切换
-
-修改 `application.yml`：
-
-```yaml
-rag:
-  vector-store:
-    type: redis   # 切换为: memory | redis | chroma | qdrant | pgvector
-```
-
-### 1. Memory（默认）
-
-无需额外部署，适合开发和测试。
-
-```yaml
-rag:
-  vector-store:
-    type: memory
-```
-
-### 2. Redis
-
-**启动 Redis：**
-```bash
-docker run -d \
-  --name redis-vector \
-  -p 6379:6379 \
-  redis/redis-stack-server:latest
-```
-
-**配置：**
-```yaml
-rag:
-  vector-store:
-    type: redis
-    redis:
-      host: localhost
-      port: 6379
-      index-name: rag-index
-```
-
-### 3. Chroma
-
-**启动 Chroma：**
-```bash
-docker run -d \
-  --name chroma \
-  -p 8000:8000 \
-  chromadb/chroma:latest
-```
-
-**配置：**
-```yaml
-rag:
-  vector-store:
-    type: chroma
-    chroma:
-      base-url: http://localhost:8000
-      collection-name: rag-collection
-```
-
-### 4. Qdrant
-
-**启动 Qdrant：**
-```bash
-docker run -d \
-  --name qdrant \
-  -p 6334:6334 \
-  -p 6333:6333 \
-  -v $(pwd)/qdrant_storage:/qdrant/storage \
-  qdrant/qdrant:latest
-```
-
-**配置：**
-```yaml
-rag:
-  vector-store:
-    type: qdrant
-    qdrant:
-      host: localhost
-      port: 6334
-      collection-name: rag-collection
-```
-
-### 5. PGVector
-
-**启动 PostgreSQL + PGVector：**
-```bash
-docker run -d \
-  --name pgvector \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  ankane/pgvector:latest
-```
-
-**配置：**
-```yaml
-rag:
-  vector-store:
-    type: pgvector
-    pgvector:
-      host: localhost
-      port: 5432
-      database: postgres
-      user: postgres
-      password: postgres
-      table: embedding_store
-```
-
-### 向量维度配置
-
-不同嵌入模型需要设置对应的向量维度：
-
-```yaml
-rag:
-  embedding-dimension: 768   # nomic-embed-text = 768
-```
-
-常见模型维度：
-- `nomic-embed-text`: 768
-- `mxbai-embed-large`: 1024
-- OpenAI `text-embedding-3-small`: 1536
-
-## 数据加载（参考 Datawhale All-In-RAG）
-
-项目实现了多格式文档加载功能，参考 [Datawhale All-In-RAG 数据加载教程](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter2/04_data_load.md)。
-
-### 支持的文档格式
-
-| 类别 | 格式 | 说明 |
-|------|------|------|
-| **文本文件** | .txt, .md, .json, .xml, .html, .csv, .yaml | 直接读取，保留格式 |
-| **办公文档** | .pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx | Apache Tika 解析提取内容 |
-| **开放文档** | .rtf, .odt, .ods, .odp | OpenDocument 格式支持 |
-
-### 文档元数据提取
-
-上传文档时自动提取以下元数据：
-- `title` - 文档标题
-- `author` - 作者信息
-- `creation-date` - 创建时间
-- `last-modified` - 最后修改时间
-- `page-count` - 页数（PDF/Word）
-- `word-count` - 字数统计
-- `content-type` - MIME 类型
-
-### 技术实现
-
-使用 **Apache Tika** 进行文档解析：
-- 自动检测文件类型
-- 提取纯文本内容
-- 保留文档元数据
-- 支持大文件（10MB+）安全解析
-
-```
-┌─────────────┐    ┌─────────────────┐    ┌─────────────┐
-│  原始文件    │ → │  Apache Tika    │ → │  结构化数据  │
-│ (多种格式)   │    │  - 类型检测      │    │  - 纯文本    │
-│             │    │  - 内容提取      │    │  - 元数据    │
-│             │    │  - 元数据解析    │    │  - 来源信息  │
-└─────────────┘    └─────────────────┘    └─────────────┘
-```
-
-## 实现细节参考
-
-### 1. Prompt 模板设计
-
-参考 LangChain 最佳实践，使用结构化提示：
-
-```
-你是一个专业的智能助手，专门基于提供的参考资料回答用户问题。
-
-回答要求：
-1. 严格基于以下提供的参考资料进行回答
-2. 如果参考资料不足以回答问题，请明确告知
-3. 回答应准确、简洁、有条理
-
-====================
-参考资料：
-====================
-{context}
-
-====================
-用户问题：{question}
-====================
-```
-
-### 2. 分块策略（参考 Datawhale All-In-RAG）
-
-支持多种分块策略，参考 [Datawhale All-In-RAG 文本分块教程](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter2/05_text_chunking.md)。
-
-| 策略 | 名称 | 适用场景 |
-|------|------|----------|
-| `recursive` | 递归字符分块 | **默认**，通用场景，优先保持语义结构 |
-| `fixed` | 固定大小分块 | 快速原型、日志处理 |
-| `semantic` | 语义分块 | 高质量语义检索，主题聚焦 |
-| `code` | 代码分块 | 代码文件，按类/函数分割 |
-
-**配置示例：**
-```yaml
-rag:
-  chunk:
-    strategy: recursive   # 切换策略: recursive | fixed | semantic | code
-    size: 1000
-    overlap: 200
-```
-
-#### 递归分块（默认）
-分层分隔符优先级：段落 → 句子 → 单词 → 字符
-```yaml
-rag:
-  chunk:
-    strategy: recursive
-    size: 1000
-    overlap: 200
-```
-
-#### 固定大小分块
-```yaml
-rag:
-  chunk:
-    strategy: fixed
-    size: 1000
-    overlap: 200
-    separator: "\n\n"   # 段落分隔符
-```
-
-#### 语义分块
-基于嵌入向量相似度检测断点，主题聚焦度高。
-```yaml
-rag:
-  chunk:
-    strategy: semantic
-    semantic:
-      threshold-type: percentile      # percentile | standard_deviation | interquartile
-      threshold-amount: 95.0          # 百分位阈值
-      buffer-size: 1                  # 上下文缓冲
-```
-
-#### 代码分块
-针对编程语言优化，按类/函数分割。
-```yaml
-rag:
-  chunk:
-    strategy: code
-    size: 500
-    overlap: 50
-```
-
-### 3. 多模态支持（参考 Datawhale All-In-RAG）
-
-项目实现了多模态功能，参考 Datawhale All-In-RAG 多模态嵌入教程。
-
-**支持的模态：**
-- **图像理解**：使用视觉模型生成图像描述
-- **图像问答**：基于图像内容进行问答
-- **图像索引**：将图像描述加入知识库
-
-**支持的图像格式：**
-- JPEG / JPG
-- PNG
-- GIF
-- WebP
-
-**配置：**
-```yaml
-rag:
-  multimodal:
-    enabled: true                 # 启用多模态功能
-    vision-model: llava           # 视觉模型名称
-```
-
-**支持的视觉模型（Ollama）：**
-- `llava` - LLaVA 1.5 视觉模型
-- `llava-phi3` - 基于 Phi-3 的轻量级视觉模型
-- `bakllava` - BakLLaVA 视觉模型
-- `llava-llama3` - 基于 Llama 3 的视觉模型
-
-**安装视觉模型：**
-```bash
-ollama pull llava
-```
-
-### 4. 检索策略（参考 Datawhale All-In-RAG 和 Milvus 优化）
-
-项目实现了多种检索优化策略，参考 Datawhale All-In-RAG 向量数据库章节和 Milvus 最佳实践。
-
-#### 基础检索
-- **相似度搜索**: 基于向量相似度
-- **Top-k**: 取最相关的3条内容
-- **上下文拼接**: 使用 `"\n\n"` 分隔，让LLM更清晰识别段落边界
-
-#### 增强检索 - 重排序（Reranking）
-两阶段检索策略：
-1. **第一阶段（召回）**: 向量检索获取候选集（Top-K×2）
-2. **第二阶段（精排）**: 使用LLM对候选集重排序，返回Top-K
-
-**优势**: 提高检索结果的相关性，减少不相关内容干扰
-
-**配置**:
-```yaml
-rag:
-  reranker:
-    enabled: true        # 启用重排序
-    top-k: 5            # 返回结果数
-  search:
-    rerank: false       # 是否默认启用（会影响响应时间）
-```
-
-**API使用**:
-```bash
-# 增强搜索（带重排序）
-curl "http://localhost:8080/api/v1/rag/search/enhanced?query=查询&rerank=true"
-
-# 多查询搜索（使用多个相关查询提高召回率）
-curl -X POST http://localhost:8080/api/v1/rag/search/multi-query \
-  -H "Content-Type: application/json" \
-  -d '{
-    "queries": ["Spring Boot特点", "Spring Boot优势", "Spring Boot功能"],
-    "maxResults": 5
-  }'
-```
-
-#### 检索优化建议（参考 Milvus）
-
-##### 1. 索引类型选择
-选择向量数据库时，考虑以下索引类型：
-
-| 索引类型 | 特点 | 适用场景 |
-|----------|------|----------|
-| **FLAT** | 暴力搜索，100%召回率 | 数据量小（<100万）、精度要求高 |
-| **HNSW** | 多层图索引，检索快 | **推荐**，内存充足时的首选 |
-| **IVF** | 聚类分桶，高吞吐 | 大规模数据，高并发场景 |
-| **DiskANN** | 磁盘优化，海量数据 | 十亿级数据，无法全载内存 |
-
-**建议**: 对于 RAG 应用，优先选择 **HNSW** 索引的向量数据库（如 Qdrant、Milvus）
-
-##### 2. 批量查询优化
-对于多个查询，使用批量搜索 API 提高吞吐量：
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/search/batch \
-  -H "Content-Type: application/json" \
-  -d '{"queries": ["Q1", "Q2", "Q3"]}'
-```
-
-##### 3. 多样性保证（MMR算法）
-避免结果过于相似，使用多样性搜索：
-```bash
-curl "http://localhost:8080/api/v1/rag/search/diverse?query=查询&diversity=0.5"
-```
-
-**参数说明**:
-- `diversity=0`: 完全基于相关性
-- `diversity=1`: 最大化多样性
-- `diversity=0.5`: 平衡相关性和多样性（推荐）
-
-##### 4. 混合检索架构（未来扩展）
-```
-用户查询
-    ↓
-┌─────────────────┐     ┌─────────────────┐
-│  密集向量检索    │     │  稀疏向量检索    │
-│  (语义理解)      │     │  (关键词匹配)    │
-└────────┬────────┘     └────────┬────────┘
-         └───────────┬───────────┘
-                     ↓
-              ┌─────────────┐
-│  重排序/Reranker │  ← 融合排序
-              └──────┬──────┘
-                     ↓
-              精准文档召回 → LLM生成
-```
-
-### 6. 支持的模型
-
-#### 聊天模型
-- llama3.1 / llama3
-- mistral
-- qwen2（通义千问）
-- gemma2
-
-#### 嵌入模型
-- nomic-embed-text
-- mxbai-embed-large
-
-## 项目结构
-
-```
-felix-ai-rag/
-├── src/main/java/com/felix/ai/rag/
-│   ├── FelixAiRagApplication.java      # 启动类
-│   ├── config/
-│   │   └── RagConfiguration.java       # RAG配置
-│   ├── controller/
-│   │   └── RagController.java          # API控制器
-│   ├── service/
-│   │   └── RagService.java             # RAG业务逻辑
-│   ├── loader/
-│   │   └── DocumentLoader.java         # 文档加载器
-│   └── dto/
-│       ├── ChatRequest.java
-│       ├── ChatResponse.java
-│       └── DocumentUploadRequest.java
-├── src/main/resources/
-│   └── application.yml                 # 配置文件
-└── pom.xml                             # Maven配置
-```
-
-## 使用示例
-
-### 1. 上传知识文档
-
-#### 方式1：直接上传文本
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/documents \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "Spring Boot 是一个用于简化 Spring 应用开发的框架。它提供了自动配置、起步依赖、内嵌服务器等特性，让开发者可以快速搭建和运行 Spring 应用。",
-    "documentName": "spring-boot-intro.txt",
-    "documentType": "txt"
-  }'
-```
-
-#### 方式2：上传文本文件
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/documents/file \
-  -F "file=@/Users/xxx/documents/intro.md" \
-  -F "description=Spring Boot 介绍文档"
-```
-
-#### 方式3：上传 PDF 文档（自动提取内容和元数据）
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/documents/file \
-  -F "file=@/Users/xxx/documents/manual.pdf" \
-  -F "description=产品使用手册"
-
-# 响应示例：
-# 文件 "manual.pdf" 上传并索引成功
-# - 字符数: 32560
-# - 文件类型: application/pdf
-# - 元数据: title=产品使用手册 author=产品经理 page-count=42
-```
-
-#### 方式4：上传 Word 文档
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/documents/file \
-  -F "file=@/Users/xxx/documents/spec.docx" \
-  -F "description=技术规范文档"
-```
-
-#### 方式5：上传 Excel 表格
-```bash
-curl -X POST http://localhost:8080/api/v1/rag/documents/file \
-  -F "file=@/Users/xxx/data/analysis.xlsx" \
-  -F "description=数据分析报表"
-```
-
-### 2. 基于文档问答
 ```bash
 curl -X POST http://localhost:8080/api/v1/rag/chat \
   -H "Content-Type: application/json" \
@@ -865,23 +117,278 @@ curl -X POST http://localhost:8080/api/v1/rag/chat \
   }'
 ```
 
-### 3. 检索相关内容
+#### 上传文档
 ```bash
-curl "http://localhost:8080/api/v1/rag/search?query=Spring Boot 特点"
+curl -X POST http://localhost:8080/api/v1/rag/documents/file \
+  -F "file=@/path/to/document.pdf"
 ```
 
-### 4. 直接对话（不使用知识库）
+### 高级检索接口
+
+#### 1. 混合检索（推荐）
+结合稠密向量检索和稀疏关键词检索，RRF融合排序
+
 ```bash
-curl -X POST http://localhost:8080/api/v1/rag/chat/direct \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "你好，请介绍一下自己"
-  }'
+# 基础混合检索
+curl "http://localhost:8080/api/v1/rag/hybrid/search?query=机器学习&maxResults=5"
+
+# 返回结果包含：
+# - 语义检索排名和分数
+# - 关键词检索排名和分数
+# - RRF融合后的最终排名
+# - 匹配的关键词
+# - 可解释性分析
 ```
+
+#### 2. Self-Query检索
+自然语言自动解析为语义查询+元数据过滤
+
+```bash
+# 解析查询
+curl -X POST http://localhost:8080/api/v1/rag/self-query/parse \
+  -H "Content-Type: application/json" \
+  -d '{"query": "2023年张三写的关于机器学习的论文"}'
+
+# 返回:
+# {
+#   "semanticQuery": "机器学习 论文",
+#   "filters": [
+#     {"field": "year", "operator": "EQUALS", "value": "2023"},
+#     {"field": "author", "operator": "EQUALS", "value": "张三"}
+#   ]
+# }
+
+# 执行Self-Query搜索
+curl -X POST http://localhost:8080/api/v1/rag/self-query/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "技术部2023年Q1的产品报告"}'
+```
+
+#### 3. 元数据过滤搜索
+```bash
+curl "http://localhost:8080/api/v1/rag/search/filtered?query=AI&year=2023&category=技术"
+```
+
+#### 4. 多样性搜索（MMR）
+```bash
+curl "http://localhost:8080/api/v1/rag/search/diverse?query=Spring Boot&maxResults=5&diversity=0.5"
+```
+
+#### 5. 优化版RAG（整合所有优化技术）
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/optimized/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "什么是RAG？", "useRag": true}'
+```
+
+### 检索对比分析
+```bash
+# 对比稠密检索 vs 稀疏检索的差异
+curl "http://localhost:8080/api/v1/rag/hybrid/compare?query=AI技术&maxResults=5"
+```
+
+## 高级配置
+
+### 1. 分块策略配置
+
+```yaml
+rag:
+  chunk:
+    strategy: sentence-window   # 句子窗口策略
+    sentence-window:
+      size: 3                   # 前后各3个句子
+
+  sentence-window:
+    enabled: true               # 检索后扩展为完整窗口
+```
+
+### 2. 混合检索配置
+
+```yaml
+rag:
+  advanced-hybrid:
+    strategy: RRF               # RRF 或 WEIGHTED_SUM
+    vector-weight: 0.5          # 稠密检索权重
+    keyword-weight: 0.5         # 稀疏检索权重
+    rrf-k: 60                   # RRF平滑参数
+    
+    bm25:
+      k1: 1.5                   # 词频饱和参数
+      b: 0.75                   # 长度归一化参数
+```
+
+### 3. 查询优化配置
+
+```yaml
+rag:
+  query-rewrite:
+    enabled: true               # 启用查询重写
+    intent-analysis: true       # 启用意图分析
+  
+  query-expansion:
+    enabled: false              # 启用查询扩展
+    variations: 3               # 查询变体数量
+  
+  self-query:
+    enabled: true               # 启用Self-Query
+```
+
+### 4. 向量数据库配置
+
+```yaml
+rag:
+  vector-store:
+    type: redis                 # memory | redis | chroma | qdrant | pgvector
+    redis:
+      host: localhost
+      port: 6379
+```
+
+## 优化技术详解
+
+### 1. 句子窗口检索（Sentence Window Retrieval）
+
+**原理**：为检索精确性而索引小块（句子），为上下文丰富性而检索大块（窗口）
+
+**流程**：
+1. 索引阶段：文档分割为句子，每个句子独立索引
+2. 检索阶段：在单一句子上执行相似度搜索（高精度）
+3. 后处理：用完整窗口文本替换单一句子（丰富上下文）
+
+**配置**：
+```yaml
+rag:
+  chunk:
+    strategy: sentence-window
+    sentence-window:
+      size: 3                   # 窗口大小：前后各N个句子
+```
+
+### 2. 混合检索（Hybrid Search）
+
+**原理**：结合稠密向量检索（语义理解）和稀疏关键词检索（精确匹配）
+
+**融合策略**：
+- **RRF** (Reciprocal Rank Fusion): 基于排名的融合，无需归一化
+- **Weighted Sum**: 加权线性组合，可精细控制权重
+
+**BM25公式**：
+```
+Score(Q, D) = Σ IDF(q_i) · [f(q_i,D)·(k1+1)] / [f(q_i,D) + k1·(1-b+b·|D|/avgdl)]
+```
+
+**配置**：
+```yaml
+rag:
+  advanced-hybrid:
+    strategy: RRF
+    vector-weight: 0.5
+    keyword-weight: 0.5
+```
+
+### 3. Self-Query检索
+
+**原理**：使用LLM将自然语言查询解析为语义查询+元数据过滤条件
+
+**示例**：
+```
+输入: "2023年张三写的关于机器学习的论文"
+输出: 
+  - 语义查询: "机器学习 论文"
+  - 过滤条件: year=2023, author=张三
+```
+
+**优势**：
+- 用户无需学习过滤语法
+- 先过滤后检索，提高效率和准确性
+- 结合语义理解和结构化查询
+
+### 4. MMR多样性搜索
+
+**原理**：Maximal Marginal Relevance，在相关性和多样性之间取得平衡
+
+**公式**：
+```
+MMR Score = λ · Relevance - (1-λ) · MaxSimilarity
+```
+
+**应用场景**：
+- 需要不同角度的答案
+- 避免结果过于相似
+- 探索性搜索
+
+## 项目结构
+
+```
+felix-ai-rag/
+├── src/main/java/com/felix/ai/rag/
+│   ├── config/
+│   │   └── RagConfiguration.java           # RAG配置
+│   ├── controller/
+│   │   ├── RagController.java              # 基础API
+│   │   ├── HybridSearchController.java     # 混合检索API
+│   │   ├── SelfQueryController.java        # Self-Query API
+│   │   ├── OptimizedRagController.java     # 优化版RAG API
+│   │   └── MultimodalController.java       # 多模态API
+│   ├── service/
+│   │   ├── RagService.java                 # 基础RAG服务
+│   │   ├── OptimizedRagService.java        # 优化版RAG服务
+│   │   ├── RerankerService.java            # 重排序服务
+│   │   └── EnhancedSearchService.java      # 增强搜索服务
+│   ├── retriever/
+│   │   ├── HybridRetriever.java            # 基础混合检索器
+│   │   └── AdvancedHybridRetriever.java    # 高级混合检索器
+│   ├── query/
+│   │   ├── SelfQueryRetriever.java         # Self-Query解析
+│   │   ├── QueryRewriteService.java        # 查询重写
+│   │   ├── QueryExpansionService.java      # 查询扩展
+│   │   └── StructuredQueryBuilder.java     # 结构化查询构建
+│   ├── processor/
+│   │   └── SentenceWindowProcessor.java    # 句子窗口后处理
+│   ├── chunker/
+│   │   ├── SentenceWindowChunker.java      # 句子窗口分块
+│   │   ├── RecursiveChunker.java           # 递归分块
+│   │   ├── SemanticChunker.java            # 语义分块
+│   │   └── ...
+│   └── filter/
+│       └── MetadataFilter.java             # 元数据过滤器
+└── src/main/resources/
+    └── application.yml                     # 配置文件
+```
+
+## 使用场景推荐
+
+| 场景 | 推荐配置 |
+|------|----------|
+| **通用知识问答** | 句子窗口 + 混合检索(RRF) + Self-Query |
+| **精确术语搜索** | 提高关键词权重(0.7) + 元数据过滤 |
+| **长文档问答** | 启用句子窗口 + 增大chunk-size |
+| **多主题探索** | MMR多样性搜索(diversity=0.5) |
+| **结构化数据** | Self-Query + 元数据过滤 |
+
+## 性能优化建议
+
+### 1. 向量数据库选择
+| 类型 | 适用场景 |
+|------|----------|
+| memory | 快速测试、开发调试 |
+| redis | 生产环境、高性能需求 |
+| qdrant | 高性能检索、过滤查询 |
+| pgvector | 已有PostgreSQL环境 |
+
+### 2. 索引优化
+- 使用HNSW索引提高检索速度
+- 合理设置向量维度（nomic-embed-text=768）
+- 大批量导入时先禁用实时索引
+
+### 3. 查询优化
+- 启用查询重写改善检索质量
+- 使用批量搜索提高吞吐量
+- 合理设置max-results和min-score
 
 ## 参考资源
 
-- [Datawhale All-In-RAG 教程](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter1/03_get_start_rag.md)
+- [Datawhale All-In-RAG 教程](https://github.com/datawhalechina/all-in-rag)
 - [LangChain4J 官方文档](https://docs.langchain4j.dev/)
 - [Ollama 官方文档](https://ollama.com/)
 
