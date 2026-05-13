@@ -108,6 +108,34 @@ rag:
     hyde:
       enabled: false              # 是否启用HyDE（会增加一次LLM调用）
 
+  # 查询重写配置
+  query-rewrite:
+    enabled: true                 # 是否启用查询重写
+    intent-analysis: true         # 是否进行意图分析
+
+  # 高级混合检索配置 (稠密检索 + 稀疏检索)
+  # 参考 Datawhale All-In-RAG 混合搜索章节
+  advanced-hybrid:
+    strategy: RRF                 # 融合策略: RRF (Reciprocal Rank Fusion) | WEIGHTED_SUM
+    vector-weight: 0.5            # 稠密检索权重 (0-1)
+    keyword-weight: 0.5           # 稀疏检索权重 (0-1)
+    rrf-k: 60                     # RRF公式中的k参数（平滑常数）
+    max-results: 5                # 默认返回结果数
+    min-score: 0.5                # 最小相似度分数
+
+    # BM25参数调优
+    bm25:
+      k1: 1.5                     # 词频饱和参数（通常1.2-2.0）
+      b: 0.75                     # 长度归一化参数（通常0.5-1.0）
+
+  # 优化版RAG配置
+  optimized:
+    use-query-rewrite: true       # 启用查询重写
+    use-query-expansion: false    # 启用查询扩展（会增加LLM调用）
+    use-hybrid-retrieval: true    # 启用混合检索
+    use-sentence-window: true     # 启用句子窗口
+    use-rerank: false             # 启用重排序（会增加LLM调用）
+
 # Logging
 logging:
   level:
