@@ -12,7 +12,7 @@
 ### 文档处理
 - **多格式文档加载**：txt, md, pdf, doc, docx, xls, xlsx, ppt, pptx 等
 - **自动元数据提取**：标题、作者、页数、创建时间等
-- **多种分块策略**：递归、固定大小、语义、代码、句子窗口
+- **多种分块策略**：递归、固定大小、语义、代码、句子窗口、Markdown结构
 
 ### 索引优化（参考 Datawhale All-In-RAG）
 - **句子窗口检索**：小块索引保证精度，窗口扩展保证上下文
@@ -24,12 +24,6 @@
 - **Self-Query**：自然语言自动解析为语义查询+元数据过滤
 - **查询重写**：4种重写技术（提示工程、多查询分解、Step-Back、HyDE）
 - **查询扩展**：多查询变体、HyDE假设文档
-
-### 高级检索（参考 Datawhale All-In-RAG）
-- **上下文压缩**：提取相关内容，去除噪音
-- **C-RAG校正检索**：自我反思机制（检索-评估-行动）
-- **父文档检索**：小块匹配，大块上下文
-- **集成检索器**：多路召回 + RRF融合
 
 ### 高级检索（参考 Datawhale All-In-RAG）
 - **上下文压缩**：提取相关内容，去除噪音
@@ -480,6 +474,16 @@ rag:
     enabled: true               # 检索后扩展为完整窗口
 ```
 
+### 6. Markdown结构分块配置
+
+```yaml
+rag:
+  chunk:
+    strategy: markdown          # Markdown结构分块策略
+```
+
+**自动识别**：上传 `.md` 或 `.markdown` 文件时自动使用 Markdown 结构分块
+
 ## 优化技术详解
 
 ### 1. 查询重写技术（4种）
@@ -648,7 +652,25 @@ Score(Q, D) = Σ IDF(q_i) · [f(q_i,D)·(k1+1)] / [f(q_i,D) + k1·(1-b+b·|D|/av
 2. 检索阶段：在单一句子上执行相似度搜索（高精度）
 3. 后处理：用完整窗口文本替换单一句子（丰富上下文）
 
-### 5. Self-Query检索
+### 5. Markdown结构分块
+
+**原理**：基于 Markdown 文档结构进行智能分块，保持文档语义完整性
+
+**分块策略**：
+1. **按标题层级分块**（# ## ###）- 保持章节完整性
+2. **代码块保持完整**（```）- 不会被截断
+3. **列表项适当合并** - 相关列表项放在一起
+4. **表格保持完整** - 表格不会被分割
+5. **段落作为最小单位** - 避免段落被截断
+
+**优势**：
+- 保持文档结构完整性
+- 代码块不会被截断，便于技术文档检索
+- 标题和内容关联性强，检索结果更精准
+
+**自动识别**：上传 `.md` 或 `.markdown` 文件时自动使用此策略
+
+### 6. Self-Query检索
 
 **原理**：使用LLM将自然语言查询解析为语义查询+元数据过滤条件
 
@@ -749,11 +771,29 @@ felix-ai-rag/
 │   │   ├── SentenceWindowChunker.java      # 句子窗口分块
 │   │   ├── RecursiveChunker.java           # 递归分块
 │   │   ├── SemanticChunker.java            # 语义分块
-│   │   └── ...
-│   └── filter/
-│       └── MetadataFilter.java             # 元数据过滤器
-└── src/main/resources/
-    └── application.yml                     # 配置文件
+│   │   ├── MarkdownChunker.java            # Markdown结构分块
+│   │   ├── FixedSizeChunker.java           # 固定大小分块
+│   │   └── ChunkerFactory.java             # 分块器工厂
+│   ├── filter/
+│   │   └── MetadataFilter.java             # 元数据过滤器
+│   └── loader/
+│       └── DocumentLoader.java             # 文档加载器（支持PDF/Word等）
+├── src/main/resources/
+│   ├── application.yml                     # 配置文件
+│   └── text2sql/
+│       ├── schema.sql                      # Text2SQL示例表结构
+│       └── data.sql                        # Text2SQL示例数据
+└── src/test/java/com/felix/ai/rag/
+    ├── RagServiceTest.java                 # 服务测试
+    └── controller/                         # Controller测试类
+        ├── RagControllerTest.java
+        ├── QueryRewriteControllerTest.java
+        ├── Text2SqlControllerTest.java
+        ├── AdvancedRetrievalControllerTest.java
+        ├── HybridSearchControllerTest.java
+        ├── SelfQueryControllerTest.java
+        ├── OptimizedRagControllerTest.java
+        └── MultimodalControllerTest.java
 ```
 
 ## 使用场景推荐
@@ -772,6 +812,8 @@ felix-ai-rag/
 | **长文档问答** | 父文档检索 + 句子窗口 + 上下文压缩 |
 | **数据库自然语言查询** | Text2SQL + RAG增强知识库 |
 | **数据分析报表** | Text2SQL + 查询重写 + 混合检索 |
+| **Markdown文档检索** | Markdown结构分块 + 父文档检索 |
+| **技术文档问答** | Markdown结构分块 + 代码分块 + 混合检索 |
 
 ## 技术选择指南
 
@@ -837,6 +879,21 @@ felix-ai-rag/
 - **业务术语**：建立业务术语到数据库字段的映射
 - **错误修复**：利用自动修复机制处理边界情况
 - **安全策略**：生产环境务必启用read-only模式
+
+### 6. 分块策略选择
+| 文档类型 | 推荐策略 | 原因 |
+|----------|----------|------|
+| **Markdown** | markdown | 保持标题结构，代码块完整 |
+| **代码文件** | code | 按类/函数分割，语义完整 |
+| **技术文档** | recursive | 分层分隔符，通用性强 |
+| **长文本** | sentence-window | 句子级精度，窗口扩展 |
+| **语义敏感** | semantic | 基于语义相似度断点 |
+| **简单文本** | fixed | 简单快速，开销低 |
+
+**自动识别**：系统根据文件扩展名自动选择最优策略
+- `.md`, `.markdown` → Markdown结构分块
+- `.java`, `.py`, `.js` 等 → 代码分块
+- 其他 → 默认递归分块
 
 ## 参考资源
 

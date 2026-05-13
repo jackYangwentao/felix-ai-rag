@@ -74,6 +74,10 @@ public class ChunkerFactory {
             case "sentence":
                 return createSentenceWindowChunker();
 
+            case "markdown":
+            case "md":
+                return createMarkdownChunker();
+
             default:
                 log.warn("未知的分块策略: {}，使用默认的递归分块", chunkStrategy);
                 return createRecursiveChunker();
@@ -143,6 +147,44 @@ public class ChunkerFactory {
 
         return new SemanticChunker(embeddingModel, thresholdType,
                 semanticThresholdAmount, semanticBufferSize);
+    }
+
+    /**
+     * 创建 Markdown 结构分块器
+     */
+    private TextChunker createMarkdownChunker() {
+        log.debug("创建Markdown结构分块器");
+        return new MarkdownChunker(chunkSize, chunkOverlap);
+    }
+
+    /**
+     * 根据文件扩展名创建合适的分块器
+     */
+    public TextChunker createChunkerForFile(String filename) {
+        if (filename == null) {
+            return createChunker();
+        }
+
+        String lowerName = filename.toLowerCase();
+
+        // Markdown 文件使用结构分块
+        if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown")) {
+            log.info("检测到Markdown文件，使用结构分块: {}", filename);
+            return createMarkdownChunker();
+        }
+
+        // 代码文件使用代码分块
+        if (lowerName.endsWith(".java") || lowerName.endsWith(".py") ||
+            lowerName.endsWith(".js") || lowerName.endsWith(".ts") ||
+            lowerName.endsWith(".go") || lowerName.endsWith(".rs") ||
+            lowerName.endsWith(".cpp") || lowerName.endsWith(".c") ||
+            lowerName.endsWith(".h") || lowerName.endsWith(".hpp")) {
+            log.info("检测到代码文件，使用代码分块: {}", filename);
+            return createCodeChunker();
+        }
+
+        // 默认使用配置的分块策略
+        return createChunker();
     }
 
     /**

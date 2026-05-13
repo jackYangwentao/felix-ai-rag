@@ -89,8 +89,8 @@ public class RagService {
                               com.felix.ai.rag.model.DocumentMetadata metadata) {
         log.info("开始索引文档: {}，使用分块策略: {}", sourceName, chunkerFactory.getCurrentStrategy());
 
-        // 使用分块器工厂创建分块器
-        TextChunker chunker = chunkerFactory.createChunker();
+        // 根据文件类型选择合适的分块器
+        TextChunker chunker = chunkerFactory.createChunkerForFile(sourceName);
 
         // 分割文档
         List<String> chunks = chunker.chunk(content);
