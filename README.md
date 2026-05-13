@@ -14,6 +14,13 @@
 - **自动元数据提取**：标题、作者、页数、创建时间等
 - **多种分块策略**：递归、固定大小、语义、代码、句子窗口、Markdown结构
 
+### 增量文档导入
+- **内容哈希检测**：使用MD5/SHA256检测文档变化，避免重复索引
+- **版本管理**：每次更新自动递增版本号，支持历史追溯
+- **状态追踪**：CREATED/UPDATED/SKIPPED/DELETED 完整状态管理
+- **批量同步**：支持文件夹批量导入，自动检测新增/修改/删除
+- **双存储实现**：内存存储（开发测试）和Redis存储（生产环境）自动切换
+
 ### 索引优化（参考 Datawhale All-In-RAG）
 - **句子窗口检索**：小块索引保证精度，窗口扩展保证上下文
 - **元数据过滤**：支持按年份、部门、分类等结构化过滤
@@ -285,6 +292,8 @@ curl -X POST http://localhost:8080/api/v1/rag/documents/check \
 | **普通上传** | `/documents/file` | 默认方式，自动检测 | 通用场景 |
 | **简单上传** | `/documents/simple` | 快速，不提取PDF图片 | 纯文本文档 |
 | **批量上传** | `/documents/batch` | 多文件一次上传 | 批量导入 |
+| **增量导入** | `/documents/incremental` | 哈希检测，跳过未变化 | 知识库维护 |
+| **批量增量** | `/documents/incremental/batch` | 文件夹同步，自动增删改 | 批量同步 |
 | **预览** | `/documents/preview` | 不上传，仅预览 | 内容检查 |
 | **格式检查** | `/documents/check` | 验证可解析性 | 上传前验证 |
 
@@ -745,6 +754,116 @@ ContentBlock {
 | Word | .doc, .docx | DocumentLoader | 文本提取 |
 | Excel | .xls, .xlsx | DocumentLoader | 文本提取 |
 | PPT | .ppt, .pptx | DocumentLoader | 文本提取 |
+
+### 增量导入接口（新增）
+
+#### 单文件增量导入
+```bash
+# 增量导入（自动检测变化，未变化则跳过）
+curl -X POST http://localhost:8080/api/v1/rag/documents/incremental \
+  -F "file=@/path/to/document.pdf" \
+  -F "documentId=docs/report.pdf"
+
+# 强制更新（即使内容未变化也重新索引）
+curl -X POST http://localhost:8080/api/v1/rag/documents/incremental \
+  -F "file=@/path/to/document.pdf" \
+  -F "forceUpdate=true"
+
+# 响应示例：
+# {
+#   "documentId": "docs/report.pdf",
+#   "status": "UPDATED",      // CREATED/UPDATED/SKIPPED/FAILED
+#   "version": 2,
+#   "chunkCount": 15,
+#   "message": "文档导入成功",
+#   "contentHash": "a1b2c3d4..."
+# }
+```
+
+#### 批量增量导入
+```bash
+# 批量导入整个文件夹
+# - 自动检测新增、修改、删除的文件
+# - 未变化的文件自动跳过
+# - 原文件夹中不存在的文件自动删除
+curl -X POST http://localhost:8080/api/v1/rag/documents/incremental/batch \
+  -F "files=@doc1.pdf" \
+  -F "files=@doc2.txt" \
+  -F "files=@doc3.md" \
+  -F "folderId=docs/2024"
+
+# 响应示例：
+# {
+#   "totalFiles": 3,
+#   "created": 1,      // 新建文档数
+#   "updated": 1,      // 更新文档数
+#   "skipped": 1,      // 跳过（未变化）
+#   "deleted": 0,      // 删除文档数
+#   "failed": 0,
+#   "errors": []
+# }
+```
+
+#### 查看已导入文档
+```bash
+# 查看所有文档
+curl http://localhost:8080/api/v1/rag/documents/registry
+
+# 按文件夹查看
+curl "http://localhost:8080/api/v1/rag/documents/registry?folder=docs/2024"
+
+# 响应示例：
+# [
+#   {
+#     "documentId": "docs/report.pdf",
+#     "documentName": "report.pdf",
+#     "documentType": "application/pdf",
+#     "contentHash": "a1b2c3d4...",
+#     "version": 2,
+#     "status": "ACTIVE",
+#     "indexTime": "2024-01-15T10:30:00",
+#     "updateTime": "2024-01-20T14:25:00",
+#     "chunkCount": 15
+#   }
+# ]
+```
+
+#### 检查文档状态
+```bash
+# 检查文档是否存在及版本信息
+curl http://localhost:8080/api/v1/rag/documents/docs/report.pdf/status
+
+# 带哈希检测是否需要更新
+curl "http://localhost:8080/api/v1/rag/documents/docs/report.pdf/status?hash=abc123"
+
+# 响应示例：
+# {
+#   "exists": true,
+#   "status": "ACTIVE",
+#   "version": 2,
+#   "indexTime": "2024-01-15T10:30:00",
+#   "updateTime": "2024-01-20T14:25:00",
+#   "changed": true,        // 哈希是否匹配
+#   "contentHash": "xyz789"
+# }
+```
+
+#### 删除文档
+```bash
+# 删除指定文档（逻辑删除/物理删除取决于存储类型）
+curl -X DELETE http://localhost:8080/api/v1/rag/documents/docs/report.pdf
+```
+
+### 增量导入 vs 普通上传对比
+
+| 特性 | 普通上传 (`/documents/file`) | 增量导入 (`/documents/incremental`) |
+|------|------------------------------|-------------------------------------|
+| **重复检测** | 无，每次都重新索引 | 有，通过内容哈希检测 |
+| **版本管理** | 无 | 有，自动递增版本号 |
+| **状态追踪** | 无 | CREATED/UPDATED/SKIPPED |
+| **批量同步** | 不支持 | 支持，自动检测增删改 |
+| **适用场景** | 简单上传 | 知识库维护、文件夹同步 |
+| **存储实现** | 统一 | 内存（逻辑删除）/ Redis（物理删除） |
 
 ### 文档处理类说明
 
@@ -1274,7 +1393,11 @@ felix-ai-rag/
 │   │   ├── RagService.java                 # 基础RAG服务
 │   │   ├── OptimizedRagService.java        # 优化版RAG服务
 │   │   ├── RerankerService.java            # 重排序服务
-│   │   └── EnhancedSearchService.java      # 增强搜索服务
+│   │   ├── EnhancedSearchService.java      # 增强搜索服务
+│   │   └── incremental/                    # 增量导入服务
+│   │       ├── IncrementalDocumentService.java         # 增量导入接口
+│   │       ├── InMemoryIncrementalDocumentService.java # 内存实现
+│   │       └── RedisIncrementalDocumentService.java    # Redis实现
 │   ├── rag/
 │   │   └── CorrectiveRagService.java       # C-RAG服务
 │   ├── text2sql/
@@ -1342,6 +1465,8 @@ felix-ai-rag/
 | **数据分析报表** | Text2SQL + 查询重写 + 混合检索 |
 | **Markdown文档检索** | Markdown结构分块 + 父文档检索 |
 | **技术文档问答** | Markdown结构分块 + 代码分块 + 混合检索 |
+| **知识库维护** | 增量导入 + 批量同步 + 版本管理 |
+| **文件夹同步** | 批量增量导入 + 自动删除检测 |
 
 ## 技术选择指南
 
@@ -1417,6 +1542,26 @@ felix-ai-rag/
 | **长文本** | sentence-window | 句子级精度，窗口扩展 |
 | **语义敏感** | semantic | 基于语义相似度断点 |
 | **简单文本** | fixed | 简单快速，开销低 |
+
+### 增量导入配置
+
+```yaml
+rag:
+  # 增量导入配置
+  incremental:
+    enabled: true               # 启用增量导入
+    storage-type: memory        # 存储类型：memory 或 redis
+
+# Redis配置（当 storage-type=redis 时）
+spring:
+  redis:
+    host: localhost
+    port: 6379
+```
+
+**存储类型选择**：
+- **memory**: 开发测试，逻辑删除，重启后需重建索引
+- **redis**: 生产环境，物理删除，数据持久化
 
 **自动识别**：系统根据文件扩展名自动选择最优策略
 - `.md`, `.markdown` → Markdown结构分块

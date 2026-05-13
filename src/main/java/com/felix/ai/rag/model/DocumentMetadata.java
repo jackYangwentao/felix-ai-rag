@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -48,9 +49,29 @@ public class DocumentMetadata {
     private String department;           // 部门
     private String project;              // 项目
 
+    // ==================== 增量导入相关 ====================
+    private String contentHash;          // 内容哈希（MD5/SHA256）
+    private Long contentLength;          // 内容长度
+    private LocalDateTime updateTime;    // 更新时间
+    private Integer version;             // 版本号
+    private DocumentStatus status;       // 文档状态
+    private List<String> chunkIds;       // 分片ID列表（用于删除时定位）
+    private Integer chunkCount;          // 分片数量
+    private String storageType;          // 存储类型（memory/redis/qdrant）
+
     // ==================== 自定义扩展 ====================
     @Builder.Default
     private Map<String, String> customFields = new HashMap<>();
+
+    /**
+     * 文档状态枚举
+     */
+    public enum DocumentStatus {
+        ACTIVE,      // 正常
+        UPDATING,    // 更新中
+        DELETED,     // 已删除（逻辑删除）
+        PENDING      // 待处理
+    }
 
     /**
      * 转换为 LangChain4j Metadata 格式
