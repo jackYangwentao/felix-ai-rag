@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -385,5 +387,158 @@ public class RagController {
     @GetMapping("/health")
     public ResponseEntity<String> health() {
         return ResponseEntity.ok("RAG服务运行正常");
+    }
+
+    // ==================== 基于 DocumentLoader 的普通文档处理接口 ====================
+
+    /**
+     * 简单文件上传（使用 DocumentLoader，不提取图片）
+     * 保持对普通文档处理的兼容性和简单性
+     */
+    @PostMapping("/documents/simple")
+    public ResponseEntity<String> uploadDocumentSimple(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "description", required = false) String description) {
+        log.info("收到简单文件上传请求: {}", file.getOriginalFilename());
+
+        try {
+            // 使用传统的 DocumentLoader 解析文件
+            DocumentLoader.DocumentData documentData = documentLoader.loadDocument(file);
+
+            String sourceName = file.getOriginalFilename();
+
+            // 构建文档元数据
+            DocumentMetadata metadata = DocumentMetadata.extractFromFilename(sourceName);
+            if (description != null && !description.isEmpty()) {
+                metadata.setContentType(description);
+            }
+            if (documentData.getMetadata() != null) {
+                metadata.setDocumentType(documentData.getMetadata().getOrDefault("detected-type", "unknown"));
+            }
+
+            // 索引文档内容
+            ragService.indexDocument(documentData.getContent(), sourceName, metadata);
+
+            // 构建响应
+            StringBuilder response = new StringBuilder();
+            response.append("文件 \"").append(sourceName).append("\" 上传并索引成功\n");
+            response.append("- 字符数: ").append(documentData.getContent().length()).append("\n");
+            response.append("- 文件类型: ").append(documentData.getContentType()).append("\n");
+
+            if (documentData.getMetadata() != null && !documentData.getMetadata().isEmpty()) {
+                response.append("- 元数据: ");
+                documentData.getMetadata().forEach((key, value) -> {
+                    if (!"detected-type".equals(key)) {
+                        response.append(key).append("=").append(value).append(" ");
+                    }
+                });
+            }
+
+            return ResponseEntity.ok(response.toString().trim());
+        } catch (IOException e) {
+            log.error("文件上传失败", e);
+            return ResponseEntity.badRequest().body("文件读取失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 批量上传文件（使用 DocumentLoader）
+     */
+    @PostMapping("/documents/batch")
+    public ResponseEntity<Map<String, Object>> uploadDocumentsBatch(
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam(value = "description", required = false) String description) {
+        log.info("收到批量文件上传请求，文件数: {}", files.size());
+
+        List<String> successFiles = new ArrayList<>();
+        List<String> failedFiles = new ArrayList<>();
+
+        for (MultipartFile file : files) {
+            try {
+                DocumentLoader.DocumentData documentData = documentLoader.loadDocument(file);
+                String sourceName = file.getOriginalFilename();
+
+                DocumentMetadata metadata = DocumentMetadata.extractFromFilename(sourceName);
+                if (description != null && !description.isEmpty()) {
+                    metadata.setContentType(description);
+                }
+
+                ragService.indexDocument(documentData.getContent(), sourceName, metadata);
+                successFiles.add(sourceName);
+            } catch (Exception e) {
+                log.error("文件上传失败: {}", file.getOriginalFilename(), e);
+                failedFiles.add(file.getOriginalFilename() + ": " + e.getMessage());
+            }
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", successFiles);
+        response.put("failed", failedFiles);
+        response.put("successCount", successFiles.size());
+        response.put("failedCount", failedFiles.size());
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 预览文件内容（使用 DocumentLoader）
+     * 不上传到知识库，仅预览解析后的内容
+     */
+    @PostMapping("/documents/preview")
+    public ResponseEntity<Map<String, Object>> previewDocument(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "maxLength", required = false, defaultValue = "1000") int maxLength) {
+        log.info("收到文件预览请求: {}", file.getOriginalFilename());
+
+        try {
+            DocumentLoader.DocumentData documentData = documentLoader.loadDocument(file);
+
+            String content = documentData.getContent();
+            String preview = content.length() > maxLength
+                    ? content.substring(0, maxLength) + "..."
+                    : content;
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("filename", file.getOriginalFilename());
+            response.put("contentType", documentData.getContentType());
+            response.put("fileSize", documentData.getFileSize());
+            response.put("totalLength", content.length());
+            response.put("preview", preview);
+            response.put("metadata", documentData.getMetadata());
+
+            return ResponseEntity.ok(response);
+        } catch (IOException e) {
+            log.error("文件预览失败", e);
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 检查文件是否可解析
+     */
+    @PostMapping("/documents/check")
+    public ResponseEntity<Map<String, Object>> checkDocument(
+            @RequestParam("file") MultipartFile file) {
+        log.info("收到文件检查请求: {}", file.getOriginalFilename());
+
+        try {
+            DocumentLoader.DocumentData documentData = documentLoader.loadDocument(file);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("filename", file.getOriginalFilename());
+            response.put("parseable", true);
+            response.put("contentType", documentData.getContentType());
+            response.put("contentLength", documentData.getContent().length());
+            response.put("metadata", documentData.getMetadata());
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("filename", file.getOriginalFilename());
+            response.put("parseable", false);
+            response.put("error", e.getMessage());
+
+            return ResponseEntity.ok(response);
+        }
     }
 }
