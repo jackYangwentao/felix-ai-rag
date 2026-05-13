@@ -75,8 +75,14 @@ public class MultimodalService {
             byte[] imageBytes = imageFile.getBytes();
             String base64Image = Base64.getEncoder().encodeToString(imageBytes);
 
+            // 获取实际的MIME类型
+            String mimeType = imageFile.getContentType();
+            if (mimeType == null || mimeType.isEmpty()) {
+                mimeType = "image/jpeg"; // 默认回退
+            }
+
             // 使用视觉模型生成描述
-            String description = generateImageDescription(base64Image, prompt);
+            String description = generateImageDescription(base64Image, mimeType, prompt);
 
             // 获取图像元数据
             ImageMetadata metadata = extractImageMetadata(imageBytes, imageFile.getOriginalFilename());
@@ -177,7 +183,7 @@ public class MultimodalService {
     /**
      * 生成图像描述
      */
-    private String generateImageDescription(String base64Image, String prompt) {
+    private String generateImageDescription(String base64Image, String mimeType, String prompt) {
         try {
             ChatLanguageModel visionModel = OllamaChatModel.builder()
                     .baseUrl(ollamaBaseUrl)
@@ -191,7 +197,7 @@ public class MultimodalService {
 
             Image image = Image.builder()
                     .base64Data(base64Image)
-                    .mimeType("image/jpeg")
+                    .mimeType(mimeType)
                     .build();
 
             UserMessage userMessage = UserMessage.from(

@@ -205,6 +205,60 @@ curl -X POST http://localhost:8080/api/v1/rag/documents \
   }'
 ```
 
+### 多模态接口（图像处理）
+
+#### 1. 图像描述
+```bash
+# 基本图像描述
+curl -X POST http://localhost:8080/api/v1/rag/multimodal/describe \
+  -F "image=@/path/to/image.jpg"
+
+# 带自定义提示词的图像描述
+curl -X POST http://localhost:8080/api/v1/rag/multimodal/describe \
+  -F "image=@/path/to/image.jpg" \
+  -F "prompt=详细描述这张图片中的场景和物体"
+```
+
+#### 2. 上传图像到知识库
+```bash
+# 上传图像并索引（自动生成描述）
+curl -X POST http://localhost:8080/api/v1/rag/multimodal/images \
+  -F "image=@/path/to/image.jpg"
+
+# 带自定义提示词上传
+curl -X POST http://localhost:8080/api/v1/rag/multimodal/images \
+  -F "image=@/path/to/image.jpg" \
+  -F "prompt=这是一张技术架构图，请详细描述其中的组件"
+```
+
+#### 3. 基于图像的问答
+```bash
+# 图像问答（不带问题，通用描述）
+curl -X POST http://localhost:8080/api/v1/rag/multimodal/chat \
+  -F "image=@/path/to/image.jpg"
+
+# 图像问答（带具体问题）
+curl -X POST http://localhost:8080/api/v1/rag/multimodal/chat \
+  -F "image=@/path/to/image.jpg" \
+  -F "question=这张图片中有几个人？他们在做什么？"
+```
+
+#### 4. 获取支持的图像类型
+```bash
+curl http://localhost:8080/api/v1/rag/multimodal/supported-types
+```
+
+#### 5. 检查文件是否为图像
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/multimodal/check-image \
+  -F "file=@/path/to/file.jpg"
+```
+
+**注意**：使用多模态功能需要先在 Ollama 中拉取视觉模型（如 `llava`）：
+```bash
+ollama pull llava
+```
+
 ### 查询重写接口
 
 #### 1. 结构化查询分析（排序/比较查询）

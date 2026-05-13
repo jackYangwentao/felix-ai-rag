@@ -95,7 +95,7 @@ rag:
   # 多模态配置
   multimodal:
     enabled: true                 # 是否启用多模态功能
-    vision-model: llava           # 视觉模型名称 (llava, llava-phi3, bakllava 等)
+    vision-model: llava-phi3      # 视觉模型名称 (llava, llava-phi3, bakllava 等)
 
   # 搜索配置
   search:
