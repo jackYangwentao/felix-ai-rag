@@ -18,9 +18,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * RAG 服务类
@@ -108,6 +111,7 @@ public class RagService {
     /**
      * 基于RAG的问答 - 参考LangChain实现
      * 流程：检索 → 上下文拼接 → Prompt构建 → LLM生成
+     * 用户问题 → 向量检索 → 句子窗口扩展 → 拼接上下文 → 构建Prompt → LLM生成回答
      *
      * @param userMessage 用户问题
      * @param sessionId   会话ID
@@ -131,6 +135,7 @@ public class RagService {
         long startTime = System.currentTimeMillis();
 
         // Step 1: 检索相关内容 (Similarity Search)
+        // 用用户问题去向量数据库做相似度检索，找到相关文档片段
         List<Content> relevantContents = contentRetriever.retrieve(
                 dev.langchain4j.rag.query.Query.from(userMessage)
         );
@@ -204,7 +209,7 @@ public class RagService {
 
     /**
      * 检索相关内容（带元数据过滤）
-     * 先过滤后搜索，提高效率和准确性
+     * 先进行向量相似度搜索，然后应用元数据过滤
      *
      * @param query       查询文本
      * @param filter      元数据过滤器
@@ -215,20 +220,57 @@ public class RagService {
     public List<String> searchRelevantContent(String query,
                                                com.felix.ai.rag.filter.MetadataFilter filter,
                                                int maxResults, double minScore) {
+        log.info("检索相关内容: query='{}', filter={}, maxResults={}, minScore={}",
+                query, filter != null ? filter.getConditions().size() + " conditions" : "none", maxResults, minScore);
+
         Embedding queryEmbedding = embeddingModel.embed(query).content();
+
+        // 扩大搜索范围以补偿过滤后的结果减少
+        int searchLimit = filter != null ? maxResults * 3 : maxResults;
 
         List<EmbeddingMatch<TextSegment>> matches = embeddingStore.findRelevant(
                 queryEmbedding,
-                maxResults,
+                searchLimit,
                 minScore
         );
 
-        // 注意：元数据过滤需要当前版本的LangChain4j支持metadata()方法
-        // 如果不支持，可以在此扩展过滤逻辑
+        log.debug("向量检索返回 {} 个匹配", matches.size());
 
-        return matches.stream()
+        // 应用元数据过滤
+        Stream<EmbeddingMatch<TextSegment>> resultStream = matches.stream();
+
+        if (filter != null && filter.getConditions() != null && !filter.getConditions().isEmpty()) {
+            resultStream = resultStream.filter(match -> {
+                Map<String, String> metadata = extractMetadata(match.embedded());
+                boolean isMatch = filter.matches(metadata);
+                log.debug("元数据过滤: metadata={}, isMatch={}", metadata, isMatch);
+                return isMatch;
+            });
+        }
+
+        List<String> results = resultStream
+                .limit(maxResults)
                 .map(match -> match.embedded().text())
                 .collect(Collectors.toList());
+
+        log.info("检索完成，返回 {} 个结果", results.size());
+        return results;
+    }
+
+    /**
+     * 从 TextSegment 提取元数据
+     */
+    private Map<String, String> extractMetadata(TextSegment segment) {
+        Map<String, String> metadata = new HashMap<>();
+
+        // 从 metadata() 方法获取元数据
+        if (segment.metadata() != null) {
+            segment.metadata().toMap().forEach((key, value) -> {
+                metadata.put(key, value.toString());
+            });
+        }
+
+        return metadata;
     }
 
     /**

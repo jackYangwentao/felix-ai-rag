@@ -38,12 +38,36 @@ public class RagConfiguration {
     @Value("${langchain4j.ollama.embedding-model.model-name:nomic-embed-text}")
     private String embeddingModelName;
 
+    /**
+     * 作用：控制每次检索时返回的最大文档片段数量。
+     * 含义：当用户提出问题后，系统会在向量数据库中搜索相关内容，但只返回相似度排名前 5 的文档片段给大模型（LLM）作为参考上下文。
+     * 调优建议：
+     * 值越大，提供给 LLM 的背景信息越丰富，但也会增加 Token 消耗和响应延迟，甚至可能引入噪声（不太相关的内容）。
+     * 值越小，响应越快、成本越低，但可能遗漏关键信息。
+     */
     @Value("${rag.max-results:5}")
     private int maxResults;
 
+    /**
+     * 作用：设置检索结果的最低相似度阈值（过滤低质量结果）。
+     * 含义：向量检索返回的文档片段相似度分数范围通常是 0~1（1 表示完全匹配）。设为 0.7 意味着只有相似度 ≥ 0.7 的文档片段才会被采纳，低于此阈值的结果会被丢弃，即使它在 Top N 中。
+     * 调优建议：
+     * 值越高（如 0.8~0.9），检索结果越精准，但可能导致"召回不足"（没有文档满足阈值，LLM 没有上下文可用）。
+     * 值越低（如 0.3~0.5），召回率越高，但可能引入不相关内容，导致 LLM 产生幻觉。
+     */
     @Value("${rag.min-score:0.7}")
     private double minScore;
 
+     /**
+      * 作用：定义 Embedding（文本向量化）的向量维度。
+      * 含义：文本在被送入向量数据库之前，会被 Embedding 模型转换为一个 768 维的浮点数向量。这个维度必须与所使用的 Embedding 模型输出维度一致。
+      * 调优建议：
+      * 这个值不是随意调整的，必须与你选择的 Embedding 模型匹配。常见的维度有：
+      * 768：如 BERT 系列模型、bge-large-zh 等
+      * 1024：如 bge-large-zh-v1.5
+      * 1536：如 OpenAI 的 text-embedding-ada-002
+      * 如果维度设置与模型实际输出不一致，会导致向量存储或检索失败。
+      */
     @Value("${rag.embedding-dimension:768}")
     private int embeddingDimension;
 

@@ -50,6 +50,7 @@ public class RagController {
         List<String> sources = null;
 
         if (request.isUseRag()) {
+            // 完整的 RAG 问答流程
             answer = ragService.chatWithRag(request.getMessage(), sessionId);
             sources = ragService.searchRelevantContent(request.getMessage());
         } else {
