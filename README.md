@@ -220,6 +220,136 @@ curl -X POST http://localhost:8080/api/v1/rag/documents/file \
 # - 图片数量: 5
 ```
 
+**方式6：简单文件上传（快速）**
+```bash
+# 使用DocumentLoader快速上传，不处理PDF图片
+curl -X POST http://localhost:8080/api/v1/rag/documents/simple \
+  -F "file=@/path/to/document.pdf" \
+  -F "description=技术文档"
+```
+
+**方式7：批量上传文件**
+```bash
+# 一次上传多个文件
+curl -X POST http://localhost:8080/api/v1/rag/documents/batch \
+  -F "files=@doc1.pdf" \
+  -F "files=@doc2.txt" \
+  -F "files=@doc3.md" \
+  -F "description=批量文档上传"
+
+# 响应示例：
+# {
+#   "totalFiles": 3,
+#   "successCount": 3,
+#   "failedCount": 0,
+#   "results": [...]
+# }
+```
+
+**方式8：预览文件内容（不上传）**
+```bash
+# 预览文件内容，不索引到知识库
+curl -X POST http://localhost:8080/api/v1/rag/documents/preview \
+  -F "file=@/path/to/document.pdf" \
+  -F "maxLength=500"
+
+# 响应示例：
+# {
+#   "filename": "document.pdf",
+#   "contentType": "application/pdf",
+#   "content": "文件内容预览...",
+#   "length": 15234,
+#   "previewLength": 500
+# }
+```
+
+**方式9：检查文件是否可解析**
+```bash
+# 验证文件格式是否支持
+curl -X POST http://localhost:8080/api/v1/rag/documents/check \
+  -F "file=@/path/to/document.pdf"
+
+# 响应示例：
+# {
+#   "valid": true,
+#   "filename": "document.pdf",
+#   "contentType": "application/pdf",
+#   "size": 1024567
+# }
+```
+
+### 上传接口对比
+
+| 接口 | 路径 | 特点 | 适用场景 |
+|------|------|------|----------|
+| **普通上传** | `/documents/file` | 默认方式，自动检测 | 通用场景 |
+| **简单上传** | `/documents/simple` | 快速，不提取PDF图片 | 纯文本文档 |
+| **批量上传** | `/documents/batch` | 多文件一次上传 | 批量导入 |
+| **预览** | `/documents/preview` | 不上传，仅预览 | 内容检查 |
+| **格式检查** | `/documents/check` | 验证可解析性 | 上传前验证 |
+
+### 内容检索接口
+
+#### 基础检索（只检索不生成）
+
+```bash
+# 基础检索（英文）
+curl "http://localhost:8080/api/v1/rag/search?query=Spring%20Boot"
+
+# 带空格的查询（URL编码）
+curl "http://localhost:8080/api/v1/rag/search?query=Spring%20Boot%20特点"
+
+# 中文查询（使用POST避免URL编码问题）
+curl -X POST http://localhost:8080/api/v1/rag/search \
+  -d "query=什么是RAG"
+
+# 带参数的增强检索
+curl "http://localhost:8080/api/v1/rag/search/enhanced?query=Spring%20Boot&maxResults=5&rerank=true"
+```
+
+**中文查询注意事项**：
+
+由于 Tomcat 对 URL 中文字符的限制，中文查询建议使用 POST 方式：
+
+```bash
+# ❌ 错误：直接中文URL参数
+curl "http://localhost:8080/api/v1/rag/search?query=什么是RAG"
+# 报错：Invalid character found in the request target
+
+# ✅ 正确：使用POST方式
+curl -X POST http://localhost:8080/api/v1/rag/search \
+  -d "query=什么是RAG"
+
+# ✅ 正确：使用 --data-urlencode 自动编码
+curl -G "http://localhost:8080/api/v1/rag/search" \
+  --data-urlencode "query=什么是RAG"
+
+# ✅ 正确：手动URL编码
+curl "http://localhost:8080/api/v1/rag/search?query=%E4%BB%80%E4%B9%88%E6%98%AFRAG"
+```
+
+**响应示例**：
+```json
+[
+  "Spring Boot 是一个基于 Spring 框架的快速开发框架...",
+  "Spring Boot 的特点包括：自动配置、起步依赖、内嵌服务器..."
+]
+```
+
+**使用场景**：
+- 查找相关文档片段
+- 搜索概念定义
+- 查找代码示例
+- 验证知识库内容
+
+#### 检索 vs 问答对比
+
+| 接口 | 功能 | 返回值 | 适用场景 |
+|------|------|--------|----------|
+| `/search` | 纯检索 | 相关文档列表 | 查找原文、验证内容 |
+| `/chat` | 检索+生成 | AI回答 | 获取总结性回答 |
+| `/search/enhanced` | 增强检索 | 带评分的检索结果 | 需要相关性排序 |
+
 ### 多模态接口（图像处理）
 
 #### 1. 图像描述
@@ -624,6 +754,19 @@ ContentBlock {
 | `DocumentLoader` | 通用文档加载（Tika） | 文本提取 |
 | `EnhancedPdfLoader` | PDF增强处理 | PDF图文提取 |
 | `PdfImageExtractor` | PDF图片提取 | 单独提取图片 |
+
+### 文档处理器选择指南
+
+| 处理器 | 适用场景 | 特点 |
+|--------|----------|------|
+| **DocumentProcessor** | 复杂文档处理 | 统一入口，支持PDF图片提取，自动路由 |
+| **DocumentLoader** | 简单文档处理 | 快速文本提取，不处理图片，轻量级 |
+
+**使用建议**：
+- 需要 PDF 图片提取 → 使用 `/documents/file` + `extractImages=true`
+- 纯文本文档快速上传 → 使用 `/documents/simple`
+- 批量上传多个文件 → 使用 `/documents/batch`
+- 仅预览不上传 → 使用 `/documents/preview`
 
 ### PDF 图片处理流程
 

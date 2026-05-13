@@ -239,9 +239,20 @@ public class RagController {
      * 只检索相关文档，不生成回答
      */
     @GetMapping("/search")
-    public ResponseEntity<List<String>> search(
-            @RequestParam("query") String query) {
+    public ResponseEntity<List<String>> search(@RequestParam("query") String query) {
         log.info("收到检索请求: {}", query);
+
+        List<String> results = ragService.searchRelevantContent(query);
+        return ResponseEntity.ok(results);
+    }
+
+    /**
+     * 内容检索接口（POST版本）
+     * 支持中文查询，避免URL编码问题
+     */
+    @PostMapping("/search")
+    public ResponseEntity<List<String>> searchPost(@RequestParam("query") String query) {
+        log.info("收到检索请求(POST): {}", query);
 
         List<String> results = ragService.searchRelevantContent(query);
         return ResponseEntity.ok(results);
