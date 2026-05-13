@@ -173,6 +173,16 @@ rag:
       enabled: true               # 启用集成检索器
       rrf-k: 60                   # RRF融合参数
 
+  # Text2SQL配置
+  # 参考 Datawhale All-In-RAG Text2SQL章节
+  text2sql:
+    enabled: true                 # 启用Text2SQL功能
+    temperature: 0.0              # SQL生成温度（0表示确定性输出）
+    max-retry-count: 3            # SQL错误修复最大重试次数
+    top-k-retrieval: 5            # 知识库检索数量
+    max-result-rows: 100          # 查询结果最大行数限制
+    read-only: true               # 是否只读模式（只允许SELECT）
+
 # Logging
 logging:
   level:

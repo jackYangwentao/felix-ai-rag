@@ -36,6 +36,18 @@
 - **MMR多样性搜索**：确保结果多样性
 - **批量搜索**：并行处理多个查询
 
+### 高级检索（参考 Datawhale All-In-RAG）
+- **上下文压缩**：提取相关内容，去除噪音
+- **C-RAG校正检索**：自我反思机制（检索-评估-行动）
+- **父文档检索**：小块匹配，大块上下文
+- **集成检索器**：多路召回 + RRF融合
+
+### Text2SQL（参考 Datawhale All-In-RAG）
+- **RAG增强知识库**：DDL + 字段描述 + 查询示例 + 业务术语
+- **自然语言转SQL**：将用户问题转换为可执行SQL
+- **错误自动修复**：执行失败时自动分析并修复SQL
+- **安全执行策略**：只读模式、自动LIMIT、超时控制
+
 ### 多模态支持
 - **图像理解**：使用视觉模型生成描述
 - **图像问答**：基于图像内容问答
@@ -95,6 +107,16 @@
 │  └───────────┼──────────┘
 │              ↓
 │  最终答案 ← LLM生成 ← 提示工程 ← [句子窗口] ← [重排序] ← 检索结果
+│
+│  ┌──────────────────────────────────────────────┐
+│  │           Text2SQL 流程（独立模块）           │
+│  │                                              │
+│  │  自然语言问题 → [知识库检索] → [SQL生成]      │
+│  │       ↓                                    │
+│  │  [安全执行] → 成功? → 是 → 返回结果          │
+│  │       ↓                                    │
+│  │       否 → [错误修复] → 重试                │
+│  └──────────────────────────────────────────────┘
 │
 ```
 
@@ -252,6 +274,51 @@ curl -X POST http://localhost:8080/api/v1/rag/advanced-retrieval/crag \
 #   "actionTaken": "知识搜索（原始查询）",
 #   "finalContentCount": 5
 # }
+```
+
+### Text2SQL接口（新增）
+
+#### 1. 自然语言查询
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/text2sql/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "年龄大于30的用户有哪些"}'
+
+# 返回:
+# {
+#   "success": true,
+#   "userQuestion": "年龄大于30的用户有哪些",
+#   "generatedSql": "SELECT * FROM users WHERE age > 30 LIMIT 100",
+#   "explanation": "查询用户表中年龄大于30岁的所有用户信息",
+#   "columns": ["id", "name", "age", "city"],
+#   "rows": [
+#     {"id": "2", "name": "李四", "age": "32", "city": "上海"}
+#   ],
+#   "rowCount": 1,
+#   "retryCount": 0
+# }
+```
+
+#### 2. 添加DDL知识
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/text2sql/knowledge/ddl \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tableName": "users",
+    "ddl": "CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100), age INT)",
+    "description": "用户表"
+  }'
+```
+
+#### 3. 添加查询示例
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/text2sql/knowledge/example \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "查询所有用户",
+    "sql": "SELECT * FROM users LIMIT 100",
+    "description": "查询示例"
+  }'
 ```
 
 ### 混合检索接口
