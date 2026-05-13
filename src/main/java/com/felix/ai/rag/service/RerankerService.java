@@ -13,6 +13,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.Arrays;
 
 /**
  * 重排序服务
@@ -99,6 +100,106 @@ public class RerankerService {
     }
 
     /**
+     * MMR (Maximal Marginal Relevance) 多样性重排序
+     * 在相关性和多样性之间取得平衡
+     *
+     * @param query           用户查询
+     * @param candidates      候选文档列表
+     * @param topK            返回结果数
+     * @param lambda          多样性因子 (0-1, 越大越注重相关性)
+     * @return 多样化排序后的结果
+     */
+    public List<ScoredDocument> rerankWithMMR(String query, List<String> candidates,
+                                               int topK, double lambda) {
+        if (!rerankerEnabled || candidates == null || candidates.isEmpty()) {
+            return candidates.stream()
+                    .map(doc -> ScoredDocument.builder().content(doc).score(1.0).build())
+                    .limit(topK)
+                    .collect(Collectors.toList());
+        }
+
+        log.info("开始MMR重排序，查询: '{}', 候选数: {}, lambda: {}", query, candidates.size(), lambda);
+
+        // 1. 计算每个候选与查询的相关性分数
+        List<ScoredDocument> scoredDocs = candidates.parallelStream()
+                .map(doc -> scoreDocument(query, doc))
+                .filter(Objects::nonNull)
+                .sorted((a, b) -> Double.compare(b.getScore(), a.getScore()))
+                .collect(Collectors.toList());
+
+        // 2. MMR选择
+        List<ScoredDocument> selected = new ArrayList<>();
+        Set<Integer> selectedIndices = new HashSet<>();
+
+        while (selected.size() < topK && selectedIndices.size() < scoredDocs.size()) {
+            double maxMMRScore = -1;
+            int bestIndex = -1;
+
+            for (int i = 0; i < scoredDocs.size(); i++) {
+                if (selectedIndices.contains(i)) continue;
+
+                ScoredDocument candidate = scoredDocs.get(i);
+
+                // 相关性得分
+                double relevanceScore = candidate.getScore() / 10.0; // 归一化到0-1
+
+                // 多样性得分（与已选文档的最大相似度）
+                double maxSimilarity = 0;
+                for (ScoredDocument selectedDoc : selected) {
+                    double similarity = calculateSimilarity(candidate.getContent(), selectedDoc.getContent());
+                    maxSimilarity = Math.max(maxSimilarity, similarity);
+                }
+
+                // MMR分数 = λ * 相关性 - (1-λ) * 最大相似度
+                double mmrScore = lambda * relevanceScore - (1 - lambda) * maxSimilarity;
+
+                if (mmrScore > maxMMRScore) {
+                    maxMMRScore = mmrScore;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex >= 0) {
+                ScoredDocument selectedDoc = scoredDocs.get(bestIndex);
+                selected.add(ScoredDocument.builder()
+                        .content(selectedDoc.getContent())
+                        .score(selectedDoc.getScore())
+                        .mmrScore(maxMMRScore)
+                        .build());
+                selectedIndices.add(bestIndex);
+            } else {
+                break;
+            }
+        }
+
+        log.info("MMR重排序完成，返回 {} 个结果", selected.size());
+        return selected;
+    }
+
+    /**
+     * MMR重排序（使用默认lambda=0.5）
+     */
+    public List<ScoredDocument> rerankWithMMR(String query, List<String> candidates, int topK) {
+        return rerankWithMMR(query, candidates, topK, 0.5);
+    }
+
+    /**
+     * 计算两段文本的相似度（基于词重叠）
+     */
+    private double calculateSimilarity(String text1, String text2) {
+        Set<String> words1 = new HashSet<>(Arrays.asList(text1.toLowerCase().split("\\s+")));
+        Set<String> words2 = new HashSet<>(Arrays.asList(text2.toLowerCase().split("\\s+")));
+
+        Set<String> intersection = new HashSet<>(words1);
+        intersection.retainAll(words2);
+
+        Set<String> union = new HashSet<>(words1);
+        union.addAll(words2);
+
+        return union.isEmpty() ? 0 : (double) intersection.size() / union.size();
+    }
+
+    /**
      * 评分单个文档
      */
     private ScoredDocument scoreDocument(String query, String document) {
@@ -173,5 +274,7 @@ public class RerankerService {
     public static class ScoredDocument {
         private String content;
         private double score;
+        private Double mmrScore;  // MMR分数（可选）
+        private Double vectorScore;  // 向量检索分数（可选）
     }
 }

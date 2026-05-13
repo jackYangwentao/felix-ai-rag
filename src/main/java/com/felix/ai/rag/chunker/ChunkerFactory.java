@@ -37,6 +37,9 @@ public class ChunkerFactory {
     @Value("${rag.chunk.semantic.buffer-size:1}")
     private int semanticBufferSize;
 
+    @Value("${rag.chunk.sentence-window.size:3}")
+    private int sentenceWindowSize;
+
     private final EmbeddingModel embeddingModel;
 
     public ChunkerFactory(EmbeddingModel embeddingModel) {
@@ -66,6 +69,10 @@ public class ChunkerFactory {
             case "code":
             case "programming":
                 return createCodeChunker();
+
+            case "sentence-window":
+            case "sentence":
+                return createSentenceWindowChunker();
 
             default:
                 log.warn("未知的分块策略: {}，使用默认的递归分块", chunkStrategy);
@@ -108,6 +115,14 @@ public class ChunkerFactory {
                 ""
         );
         return new RecursiveChunker(chunkSize, chunkOverlap, codeSeparators);
+    }
+
+    /**
+     * 创建句子窗口分块器
+     */
+    private TextChunker createSentenceWindowChunker() {
+        log.debug("创建句子窗口分块器，窗口大小: {}", sentenceWindowSize);
+        return new SentenceWindowChunker(sentenceWindowSize);
     }
 
     /**

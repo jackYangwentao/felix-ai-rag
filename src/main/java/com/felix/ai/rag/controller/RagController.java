@@ -3,7 +3,9 @@ package com.felix.ai.rag.controller;
 import com.felix.ai.rag.dto.ChatRequest;
 import com.felix.ai.rag.dto.ChatResponse;
 import com.felix.ai.rag.dto.DocumentUploadRequest;
+import com.felix.ai.rag.filter.MetadataFilter;
 import com.felix.ai.rag.loader.DocumentLoader;
+import com.felix.ai.rag.model.DocumentMetadata;
 import com.felix.ai.rag.service.EnhancedSearchService;
 import com.felix.ai.rag.service.RagService;
 import lombok.RequiredArgsConstructor;
@@ -87,7 +89,7 @@ public class RagController {
 
     /**
      * 文档上传接口（文本形式）
-     * 将文档内容索引到向量存储
+     * 将文档内容索引到向量存储，支持元数据
      */
     @PostMapping("/documents")
     public ResponseEntity<String> uploadDocument(@RequestBody DocumentUploadRequest request) {
@@ -101,9 +103,24 @@ public class RagController {
                 ? request.getDocumentName()
                 : "unnamed-document";
 
-        ragService.indexDocument(request.getContent(), sourceName);
+        // 构建文档元数据
+        DocumentMetadata metadata = DocumentMetadata.builder()
+                .documentName(request.getDocumentName())
+                .documentType(request.getDocumentType())
+                .contentType(request.getDescription())
+                .author(request.getAuthor())
+                .category(request.getCategory())
+                .year(request.getYear())
+                .quarter(request.getQuarter())
+                .department(request.getDepartment())
+                .project(request.getProject())
+                .tags(request.getTags())
+                .customFields(request.getCustomMetadata())
+                .build();
 
-        return ResponseEntity.ok("文档 \"" + sourceName + "\" 索引成功");
+        ragService.indexDocument(request.getContent(), sourceName, metadata);
+
+        return ResponseEntity.ok("文档 \"" + sourceName + "\" 索引成功，包含元数据");
     }
 
     /**
@@ -124,8 +141,18 @@ public class RagController {
 
             String sourceName = file.getOriginalFilename();
 
-            // 索引文档内容到向量存储
-            ragService.indexDocument(documentData.getContent(), sourceName);
+            // 构建文档元数据（从文件名自动提取）
+            DocumentMetadata metadata = DocumentMetadata.extractFromFilename(sourceName);
+            if (description != null && !description.isEmpty()) {
+                metadata.setContentType(description);
+            }
+            // 从DocumentLoader解析的元数据合并
+            if (documentData.getMetadata() != null) {
+                metadata.setDocumentType(documentData.getMetadata().getOrDefault("detected-type", "unknown"));
+            }
+
+            // 索引文档内容到向量存储（带元数据）
+            ragService.indexDocument(documentData.getContent(), sourceName, metadata);
 
             // 构建成功响应信息
             StringBuilder response = new StringBuilder();
@@ -250,6 +277,53 @@ public class RagController {
                 enhancedSearchService.diverseSearch(query, topK, diversity);
 
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 元数据过滤搜索接口
+     * 先过滤后搜索，提高效率和准确性
+     *
+     * 参考 Datawhale All-In-RAG 元数据过滤 + 向量搜索
+     */
+    @GetMapping("/search/filtered")
+    public ResponseEntity<List<String>> searchWithFilter(
+            @RequestParam("query") String query,
+            @RequestParam(value = "documentType", required = false) String documentType,
+            @RequestParam(value = "year", required = false) String year,
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "author", required = false) String author,
+            @RequestParam(value = "maxResults", required = false, defaultValue = "5") int maxResults,
+            @RequestParam(value = "minScore", required = false, defaultValue = "0.7") double minScore) {
+
+        log.info("收到元数据过滤检索请求: {}, documentType={}, year={}, category={}",
+                query, documentType, year, category);
+
+        // 构建元数据过滤器
+        MetadataFilter filter = new MetadataFilter();
+        filter.setOperator(MetadataFilter.LogicalOperator.AND);
+
+        java.util.List<MetadataFilter.FilterCondition> conditions = new java.util.ArrayList<>();
+
+        if (documentType != null && !documentType.isEmpty()) {
+            conditions.add(MetadataFilter.eq("document_type", documentType));
+        }
+        if (year != null && !year.isEmpty()) {
+            conditions.add(MetadataFilter.eq("year", year));
+        }
+        if (category != null && !category.isEmpty()) {
+            conditions.add(MetadataFilter.eq("category", category));
+        }
+        if (author != null && !author.isEmpty()) {
+            conditions.add(MetadataFilter.eq("author", author));
+        }
+
+        filter.setConditions(conditions);
+
+        // 执行过滤搜索
+        List<String> results = ragService.searchRelevantContent(
+                query, filter, maxResults, minScore);
+
+        return ResponseEntity.ok(results);
     }
 
     /**

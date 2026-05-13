@@ -26,9 +26,9 @@ rag:
   embedding-dimension: 768  # 嵌入向量维度 (nomic-embed-text = 768, text-embedding-3-small = 1536)
 
   # 分块策略配置
-  # 支持的策略: recursive(默认), fixed, semantic, code
+  # 支持的策略: recursive(默认), fixed, semantic, code, sentence-window
   chunk:
-    strategy: recursive   # 分块策略: recursive | fixed | semantic | code
+    strategy: recursive   # 分块策略: recursive | fixed | semantic | code | sentence-window
     size: 1000           # 分块大小
     overlap: 200         # 分块重叠
     separator: ""        # 固定大小分块的分隔符（为空时使用 "\n\n"）
@@ -38,6 +38,15 @@ rag:
       threshold-type: percentile      # 断点识别方法: percentile | standard_deviation | interquartile
       threshold-amount: 95.0          # 阈值数值
       buffer-size: 1                  # 上下文缓冲大小
+
+    # 句子窗口配置（strategy: sentence-window）
+    # 核心思想：为检索精确性而索引小块（句子），为上下文丰富性而检索大块（窗口）
+    sentence-window:
+      size: 3              # 窗口大小：前后各N个句子
+
+  # 句子窗口后处理器配置
+  sentence-window:
+    enabled: true          # 是否启用句子窗口后处理（检索后替换为完整窗口）
 
   # 向量存储配置
   # 支持的类型: memory(默认), redis, chroma, qdrant, pgvector
@@ -83,6 +92,21 @@ rag:
   reranker:
     enabled: true                 # 是否启用重排序功能
     top-k: 5                      # 重排序后返回的结果数
+
+  # 混合检索配置 (BM25 + 向量检索)
+  hybrid-retriever:
+    vector-weight: 0.7            # 向量检索权重 (0-1)
+    keyword-weight: 0.3           # 关键词检索权重 (0-1)
+    rrf-k: 60                     # RRF融合公式的k参数
+    max-results: 5                # 默认返回结果数
+    min-score: 0.5                # 最小相似度分数
+
+  # 查询扩展配置
+  query-expansion:
+    enabled: true                 # 是否启用查询扩展
+    variations: 3                 # 生成的查询变体数量
+    hyde:
+      enabled: false              # 是否启用HyDE（会增加一次LLM调用）
 
 # Logging
 logging:
