@@ -1,6 +1,6 @@
 # Felix AI RAG
 
-基于 LangChain4J 的 Spring Boot RAG (Retrieval-Augmented Generation) 应用，深度参考 [Datawhale All-In-RAG](https://github.com/datawhalechina/all-in-rag) 教程实现，整合了索引优化、查询构建、混合搜索等高级RAG技术。
+基于 LangChain4J 的 Spring Boot RAG (Retrieval-Augmented Generation) 应用，深度参考 [Datawhale All-In-RAG](https://github.com/datawhalechina/all-in-rag) 教程实现，整合了索引优化、查询构建、查询重写、混合搜索等高级RAG技术。
 
 ## 功能特性
 
@@ -22,7 +22,7 @@
 
 ### 查询优化
 - **Self-Query**：自然语言自动解析为语义查询+元数据过滤
-- **查询重写**：意图识别驱动的查询优化
+- **查询重写**：4种重写技术（提示工程、多查询分解、Step-Back、HyDE）
 - **查询扩展**：多查询变体、HyDE假设文档
 
 ### 检索优化
@@ -55,17 +55,28 @@
 ┌─────────────────────────────────────────────────────────────────┘
 │
 │  用户查询 → [查询重写] → [Self-Query解析] → [查询扩展]
-│                                           ↓
-│                              ┌──────────────────────┐
-│                              │   混合检索 (Hybrid)   │
-│                              │  ┌────────┐ ┌──────┐ │
-│                              │  │稠密检索│ │稀疏检索│ │
-│                              │  │(向量) │ │(BM25)│ │
-│                              │  └───┬────┘ └──┬───┘ │
-│                              │      └────┬────┘     │
-│                              │      [RRF融合排序]    │
-│                              └───────────┼──────────┘
-│                                          ↓
+│      ↓
+│  ┌──────────────────────────────────────────────┐
+│  │           查询重写技术（4种）                  │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐     │
+│  │  │提示工程  │ │多查询分解│ │Step-Back │     │
+│  │  │(排序/比较)│ │(复杂问题)│ │(推理问题)│     │
+│  │  └──────────┘ └──────────┘ └──────────┘     │
+│  │  ┌──────────┐                                │
+│  │  │  HyDE   │ - 假设文档嵌入                 │
+│  │  └──────────┘                                │
+│  └──────────────────────────────────────────────┘
+│      ↓
+│  ┌──────────────────────┐
+│  │   混合检索 (Hybrid)   │
+│  │  ┌────────┐ ┌──────┐ │
+│  │  │稠密检索│ │稀疏检索│ │
+│  │  │(向量) │ │(BM25)│ │
+│  │  └───┬────┘ └──┬───┘ │
+│  │      └────┬────┘     │
+│  │      [RRF融合排序]    │
+│  └───────────┼──────────┘
+│              ↓
 │  最终答案 ← LLM生成 ← 提示工程 ← [句子窗口] ← [重排序] ← 检索结果
 │
 ```
@@ -123,11 +134,77 @@ curl -X POST http://localhost:8080/api/v1/rag/documents/file \
   -F "file=@/path/to/document.pdf"
 ```
 
+### 查询重写接口（新增）
+
+#### 1. 结构化查询分析（排序/比较查询）
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/query-rewrite/structured \
+  -H "Content-Type: application/json" \
+  -d '{"query": "时间最短的视频"}'
+
+# 返回:
+# {
+#   "isStructured": true,
+#   "sortBy": "length",
+#   "order": "asc",
+#   "description": "按length 升序排序，取前1个"
+# }
+```
+
+#### 2. 多查询分解
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/query-rewrite/multi-query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "在《流浪地球》中，刘慈欣对人工智能和未来社会结构有何看法？"}'
+
+# 返回:
+# {
+#   "subQueries": [
+#     "《流浪地球》中描述的人工智能技术有哪些？",
+#     "《流浪地球》中描绘的未来社会结构是怎样的？",
+#     "刘慈欣关于人工智能的观点是什么？"
+#   ]
+# }
+```
+
+#### 3. Step-Back退步提示
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/query-rewrite/step-back \
+  -H "Content-Type: application/json" \
+  -d '{"query": "在一个密闭容器中，加热气体后压力会如何变化？"}'
+
+# 返回:
+# {
+#   "stepBackQuestion": "气体状态变化遵循什么物理定律？",
+#   "strategy": "先检索通用原理，再结合原问题推理"
+# }
+```
+
+#### 4. HyDE假设文档嵌入
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/query-rewrite/hyde \
+  -H "Content-Type: application/json" \
+  -d '{"query": "什么是RAG技术？"}'
+
+# 返回:
+# {
+#   "hypotheticalDocument": "RAG（Retrieval-Augmented Generation）是一种...",
+#   "strategy": "使用假设文档的向量进行语义检索"
+# }
+```
+
+#### 5. 综合查询重写（所有技术）
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/query-rewrite/comprehensive \
+  -H "Content-Type: application/json" \
+  -d '{"query": "2023年播放量最高的技术视频"}'
+
+# 返回所有适用的重写结果和策略
+```
+
 ### 高级检索接口
 
-#### 1. 混合检索（推荐）
-结合稠密向量检索和稀疏关键词检索，RRF融合排序
-
+#### 混合检索（推荐）
 ```bash
 # 基础混合检索
 curl "http://localhost:8080/api/v1/rag/hybrid/search?query=机器学习&maxResults=5"
@@ -140,23 +217,12 @@ curl "http://localhost:8080/api/v1/rag/hybrid/search?query=机器学习&maxResul
 # - 可解释性分析
 ```
 
-#### 2. Self-Query检索
-自然语言自动解析为语义查询+元数据过滤
-
+#### Self-Query检索
 ```bash
 # 解析查询
 curl -X POST http://localhost:8080/api/v1/rag/self-query/parse \
   -H "Content-Type: application/json" \
   -d '{"query": "2023年张三写的关于机器学习的论文"}'
-
-# 返回:
-# {
-#   "semanticQuery": "机器学习 论文",
-#   "filters": [
-#     {"field": "year", "operator": "EQUALS", "value": "2023"},
-#     {"field": "author", "operator": "EQUALS", "value": "张三"}
-#   ]
-# }
 
 # 执行Self-Query搜索
 curl -X POST http://localhost:8080/api/v1/rag/self-query/search \
@@ -164,42 +230,35 @@ curl -X POST http://localhost:8080/api/v1/rag/self-query/search \
   -d '{"query": "技术部2023年Q1的产品报告"}'
 ```
 
-#### 3. 元数据过滤搜索
-```bash
-curl "http://localhost:8080/api/v1/rag/search/filtered?query=AI&year=2023&category=技术"
-```
-
-#### 4. 多样性搜索（MMR）
-```bash
-curl "http://localhost:8080/api/v1/rag/search/diverse?query=Spring Boot&maxResults=5&diversity=0.5"
-```
-
-#### 5. 优化版RAG（整合所有优化技术）
+#### 优化版RAG（整合所有优化技术）
 ```bash
 curl -X POST http://localhost:8080/api/v1/rag/optimized/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "什么是RAG？", "useRag": true}'
 ```
 
-### 检索对比分析
-```bash
-# 对比稠密检索 vs 稀疏检索的差异
-curl "http://localhost:8080/api/v1/rag/hybrid/compare?query=AI技术&maxResults=5"
-```
-
 ## 高级配置
 
-### 1. 分块策略配置
+### 1. 查询重写配置
 
 ```yaml
 rag:
-  chunk:
-    strategy: sentence-window   # 句子窗口策略
-    sentence-window:
-      size: 3                   # 前后各3个句子
-
-  sentence-window:
-    enabled: true               # 检索后扩展为完整窗口
+  query-rewrite:
+    enabled: true               # 启用查询重写
+    intent-analysis: true       # 启用意图分析
+    
+    # 多查询分解配置
+    multi-query:
+      enabled: true             # 启用多查询分解
+      variations: 3             # 生成的子查询数量
+    
+    # 退步提示配置
+    step-back:
+      enabled: true             # 启用退步提示
+    
+    # HyDE配置
+    hyde:
+      enabled: false            # 启用HyDE（会增加LLM调用和嵌入计算）
 ```
 
 ### 2. 混合检索配置
@@ -217,52 +276,89 @@ rag:
       b: 0.75                   # 长度归一化参数
 ```
 
-### 3. 查询优化配置
+### 3. 句子窗口配置
 
 ```yaml
 rag:
-  query-rewrite:
-    enabled: true               # 启用查询重写
-    intent-analysis: true       # 启用意图分析
-  
-  query-expansion:
-    enabled: false              # 启用查询扩展
-    variations: 3               # 查询变体数量
-  
-  self-query:
-    enabled: true               # 启用Self-Query
-```
+  chunk:
+    strategy: sentence-window   # 句子窗口策略
+    sentence-window:
+      size: 3                   # 前后各3个句子
 
-### 4. 向量数据库配置
-
-```yaml
-rag:
-  vector-store:
-    type: redis                 # memory | redis | chroma | qdrant | pgvector
-    redis:
-      host: localhost
-      port: 6379
+  sentence-window:
+    enabled: true               # 检索后扩展为完整窗口
 ```
 
 ## 优化技术详解
 
-### 1. 句子窗口检索（Sentence Window Retrieval）
+### 1. 查询重写技术（4种）
 
-**原理**：为检索精确性而索引小块（句子），为上下文丰富性而检索大块（窗口）
+参考 Datawhale All-In-RAG 查询重写章节
 
-**流程**：
-1. 索引阶段：文档分割为句子，每个句子独立索引
-2. 检索阶段：在单一句子上执行相似度搜索（高精度）
-3. 后处理：用完整窗口文本替换单一句子（丰富上下文）
+#### 1.1 提示工程（Prompt Engineering）
 
-**配置**：
-```yaml
-rag:
-  chunk:
-    strategy: sentence-window
-    sentence-window:
-      size: 3                   # 窗口大小：前后各N个句子
+**原理**：通过精心设计的提示词，引导LLM将原始查询改写得更清晰，或生成可执行的结构化指令
+
+**适用场景**：排序/比较类查询（最值查询）
+
+**示例**：
 ```
+输入: "时间最短的视频"
+输出: {"sortBy": "length", "order": "asc"}
+```
+
+**优势**：直接可控，支持排序、过滤操作
+
+#### 1.2 多查询分解（Multi-Query）
+
+**原理**：将复杂问题拆分成多个更简单、更具体的子问题，分别检索后合并结果
+
+**工作流程**：
+```
+原始复杂问题 → LLM分解为多个子问题 → 并行检索 → 合并去重 → 综合上下文 → 生成答案
+```
+
+**示例**：
+```
+原问题: "在《流浪地球》中，刘慈欣对人工智能和未来社会结构有何看法？"
+子问题1: "《流浪地球》中描述的人工智能技术有哪些？"
+子问题2: "《流浪地球》中描绘的未来社会结构是怎样的？"
+子问题3: "刘慈欣关于人工智能的观点是什么？"
+```
+
+**优势**：覆盖全面，召回率高
+
+#### 1.3 Step-Back退步提示
+
+**原理**：面对细节繁多或过于具体的问题时，先"退后一步"探寻背后的通用原理，再基于原理进行具体推理
+
+**两步流程**：
+1. 抽象化：生成更高层次的"退步问题"
+2. 推理：先获取通用原理，再结合原问题推理
+
+**示例**：
+```
+具体问题: "在一个密闭容器中，加热气体后压力会如何变化？"
+退步问题: "气体状态变化遵循什么物理定律？"
+推理: 理想气体定律 PV=nRT → 温度升高 → 压力增大
+```
+
+**优势**：提高复杂推理准确性
+
+#### 1.4 HyDE（Hypothetical Document Embeddings）
+
+**原理**：不直接使用用户查询向量，而是先让LLM生成一个"假设性的理想答案文档"，再用该文档的向量去检索真实文档
+
+**三步流程**：
+1. **生成**：LLM根据查询生成详细的假设性答案文档
+2. **编码**：将假设文档编码为向量嵌入
+3. **检索**：用假设文档向量搜索最相似的真实文档
+
+**核心洞察**：将困难的"查询→文档"匹配转化为容易的"文档→文档"匹配
+
+**适用场景**：查询短、文档长，语义鸿沟大的场景
+
+**优势**：提升语义匹配质量
 
 ### 2. 混合检索（Hybrid Search）
 
@@ -277,16 +373,16 @@ rag:
 Score(Q, D) = Σ IDF(q_i) · [f(q_i,D)·(k1+1)] / [f(q_i,D) + k1·(1-b+b·|D|/avgdl)]
 ```
 
-**配置**：
-```yaml
-rag:
-  advanced-hybrid:
-    strategy: RRF
-    vector-weight: 0.5
-    keyword-weight: 0.5
-```
+### 3. 句子窗口检索（Sentence Window Retrieval）
 
-### 3. Self-Query检索
+**原理**：为检索精确性而索引小块（句子），为上下文丰富性而检索大块（窗口）
+
+**流程**：
+1. 索引阶段：文档分割为句子，每个句子独立索引
+2. 检索阶段：在单一句子上执行相似度搜索（高精度）
+3. 后处理：用完整窗口文本替换单一句子（丰富上下文）
+
+### 4. Self-Query检索
 
 **原理**：使用LLM将自然语言查询解析为语义查询+元数据过滤条件
 
@@ -298,25 +394,6 @@ rag:
   - 过滤条件: year=2023, author=张三
 ```
 
-**优势**：
-- 用户无需学习过滤语法
-- 先过滤后检索，提高效率和准确性
-- 结合语义理解和结构化查询
-
-### 4. MMR多样性搜索
-
-**原理**：Maximal Marginal Relevance，在相关性和多样性之间取得平衡
-
-**公式**：
-```
-MMR Score = λ · Relevance - (1-λ) · MaxSimilarity
-```
-
-**应用场景**：
-- 需要不同角度的答案
-- 避免结果过于相似
-- 探索性搜索
-
 ## 项目结构
 
 ```
@@ -326,6 +403,7 @@ felix-ai-rag/
 │   │   └── RagConfiguration.java           # RAG配置
 │   ├── controller/
 │   │   ├── RagController.java              # 基础API
+│   │   ├── QueryRewriteController.java     # 查询重写API（新增）
 │   │   ├── HybridSearchController.java     # 混合检索API
 │   │   ├── SelfQueryController.java        # Self-Query API
 │   │   ├── OptimizedRagController.java     # 优化版RAG API
@@ -340,7 +418,8 @@ felix-ai-rag/
 │   │   └── AdvancedHybridRetriever.java    # 高级混合检索器
 │   ├── query/
 │   │   ├── SelfQueryRetriever.java         # Self-Query解析
-│   │   ├── QueryRewriteService.java        # 查询重写
+│   │   ├── QueryRewriteService.java        # 基础查询重写
+│   │   ├── AdvancedQueryRewriteService.java # 高级查询重写（新增）
 │   │   ├── QueryExpansionService.java      # 查询扩展
 │   │   └── StructuredQueryBuilder.java     # 结构化查询构建
 │   ├── processor/
@@ -358,13 +437,25 @@ felix-ai-rag/
 
 ## 使用场景推荐
 
-| 场景 | 推荐配置 |
-|------|----------|
-| **通用知识问答** | 句子窗口 + 混合检索(RRF) + Self-Query |
+| 场景 | 推荐技术组合 |
+|------|-------------|
+| **通用知识问答** | 综合查询重写 + 混合检索(RRF) + 句子窗口 |
+| **排序/比较查询** | 结构化查询分析 + 元数据过滤 |
+| **复杂多主题问题** | 多查询分解 + 混合检索 |
+| **科学推理解题** | Step-Back退步提示 + 混合检索 |
+| **短查询长文档** | HyDE + 混合检索 |
 | **精确术语搜索** | 提高关键词权重(0.7) + 元数据过滤 |
-| **长文档问答** | 启用句子窗口 + 增大chunk-size |
 | **多主题探索** | MMR多样性搜索(diversity=0.5) |
-| **结构化数据** | Self-Query + 元数据过滤 |
+| **结构化数据查询** | Self-Query + 元数据过滤 |
+
+## 查询重写技术选择指南
+
+| 技术 | 适用场景 | 开销 | 推荐度 |
+|------|----------|------|--------|
+| **提示工程** | 排序/比较查询 | 低 | ⭐⭐⭐⭐⭐ |
+| **多查询分解** | 复杂多主题问题 | 中 | ⭐⭐⭐⭐ |
+| **Step-Back** | 科学推理解题 | 低 | ⭐⭐⭐⭐ |
+| **HyDE** | 短查询长文档 | 高 | ⭐⭐⭐ |
 
 ## 性能优化建议
 
@@ -376,12 +467,13 @@ felix-ai-rag/
 | qdrant | 高性能检索、过滤查询 |
 | pgvector | 已有PostgreSQL环境 |
 
-### 2. 索引优化
-- 使用HNSW索引提高检索速度
-- 合理设置向量维度（nomic-embed-text=768）
-- 大批量导入时先禁用实时索引
+### 2. 查询重写性能
+- **提示工程**：开销低，可默认启用
+- **多查询分解**：会增加检索次数，适合复杂查询
+- **Step-Back**：开销低，适合推理类查询
+- **HyDE**：增加LLM调用和嵌入计算，按需启用
 
-### 3. 查询优化
+### 3. 检索优化
 - 启用查询重写改善检索质量
 - 使用批量搜索提高吞吐量
 - 合理设置max-results和min-score

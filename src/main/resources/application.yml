@@ -109,9 +109,23 @@ rag:
       enabled: false              # 是否启用HyDE（会增加一次LLM调用）
 
   # 查询重写配置
+  # 参考 Datawhale All-In-RAG 查询重写章节
   query-rewrite:
     enabled: true                 # 是否启用查询重写
     intent-analysis: true         # 是否进行意图分析
+
+    # 多查询分解配置
+    multi-query:
+      enabled: true               # 启用多查询分解
+      variations: 3               # 生成的子查询数量
+
+    # 退步提示配置
+    step-back:
+      enabled: true               # 启用退步提示
+
+    # HyDE配置
+    hyde:
+      enabled: false              # 启用HyDE（会增加LLM调用和嵌入计算）
 
   # 高级混合检索配置 (稠密检索 + 稀疏检索)
   # 参考 Datawhale All-In-RAG 混合搜索章节
