@@ -117,6 +117,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- PDFBox for PDF image extraction -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.1</version>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
