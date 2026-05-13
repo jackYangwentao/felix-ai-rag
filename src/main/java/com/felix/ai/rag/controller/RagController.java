@@ -5,8 +5,10 @@ import com.felix.ai.rag.dto.ChatResponse;
 import com.felix.ai.rag.dto.DocumentUploadRequest;
 import com.felix.ai.rag.filter.MetadataFilter;
 import com.felix.ai.rag.loader.DocumentLoader;
+import com.felix.ai.rag.loader.DocumentProcessor;
 import com.felix.ai.rag.model.DocumentMetadata;
 import com.felix.ai.rag.service.EnhancedSearchService;
+import com.felix.ai.rag.service.MultimodalService;
 import com.felix.ai.rag.service.RagService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,7 +32,9 @@ public class RagController {
 
     private final RagService ragService;
     private final DocumentLoader documentLoader;
+    private final DocumentProcessor documentProcessor;
     private final EnhancedSearchService enhancedSearchService;
+    private final MultimodalService multimodalService;
 
     /**
      * RAG 问答接口
@@ -133,41 +137,89 @@ public class RagController {
     @PostMapping("/documents/file")
     public ResponseEntity<String> uploadDocumentFile(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "description", required = false) String description) {
-        log.info("收到文件上传请求: {}", file.getOriginalFilename());
+            @RequestParam(value = "description", required = false) String description,
+            @RequestParam(value = "extractImages", required = false, defaultValue = "false") boolean extractImages) {
+        log.info("收到文件上传请求: {}, 提取图片: {}", file.getOriginalFilename(), extractImages);
 
         try {
-            // 使用增强的文档加载器解析文件
-            DocumentLoader.DocumentData documentData = documentLoader.loadDocument(file);
+            // 使用统一的文档处理器解析文件
+            DocumentProcessor.ProcessingOptions options = DocumentProcessor.ProcessingOptions.builder()
+                    .extractImages(extractImages)
+                    .build();
+            DocumentProcessor.ProcessedDocument processedDoc = documentProcessor.process(file, options);
 
             String sourceName = file.getOriginalFilename();
 
-            // 构建文档元数据（从文件名自动提取）
+            // 构建文档元数据
             DocumentMetadata metadata = DocumentMetadata.extractFromFilename(sourceName);
             if (description != null && !description.isEmpty()) {
                 metadata.setContentType(description);
             }
-            // 从DocumentLoader解析的元数据合并
-            if (documentData.getMetadata() != null) {
-                metadata.setDocumentType(documentData.getMetadata().getOrDefault("detected-type", "unknown"));
-            }
+            metadata.setDocumentType(processedDoc.getContentType());
 
-            // 索引文档内容到向量存储（带元数据）
-            ragService.indexDocument(documentData.getContent(), sourceName, metadata);
+            // 索引文档内容（包含所有文本块）
+            String fullText = processedDoc.getFullText();
+            ragService.indexDocument(fullText, sourceName, metadata);
+
+            // 如果有图片且需要提取，使用多模态服务处理图片
+            if (processedDoc.isHasImages() && extractImages) {
+                log.info("PDF 包含 {} 张图片，开始处理...", processedDoc.getImageCount());
+
+                int imageIndex = 1;
+                for (DocumentProcessor.ContentBlock imageBlock : processedDoc.getImageBlocks()) {
+                    try {
+                        // 1. 使用视觉模型生成图片描述
+                        String imageDescription = multimodalService.describeImage(
+                                imageBlock.getImageData(),
+                                "请详细描述这张图片的内容，包括图表数据、文字信息、视觉元素等"
+                        );
+
+                        // 2. 构建图片文档元数据
+                        DocumentMetadata imageMetadata = DocumentMetadata.extractFromFilename(
+                                sourceName + "_image_" + imageIndex
+                        );
+                        imageMetadata.setContentType("pdf-extracted-image");
+                        imageMetadata.setDocumentType("image/png");
+                        if (imageBlock.getMetadata() != null) {
+                            String pageNum = imageBlock.getMetadata().getOrDefault("pageNumber", "未知");
+                            imageMetadata.setTitle(String.format(
+                                    "PDF第%s页提取的图片", pageNum
+                            ));
+                        }
+
+                        // 3. 将图片描述索引到向量库（作为文本知识）
+                        ragService.indexDocument(
+                                imageDescription,
+                                sourceName + "_image_" + imageIndex,
+                                imageMetadata
+                        );
+
+                        log.info("PDF图片 {} 已处理并索引: {}", imageIndex,
+                                imageDescription.substring(0, Math.min(50, imageDescription.length())) + "...");
+
+                        imageIndex++;
+                    } catch (Exception e) {
+                        log.error("处理PDF图片 {} 失败: {}", imageIndex, e.getMessage());
+                    }
+                }
+
+                log.info("PDF 图片处理完成，共索引 {} 张图片", imageIndex - 1);
+            }
 
             // 构建成功响应信息
             StringBuilder response = new StringBuilder();
             response.append("文件 \"").append(sourceName).append("\" 上传并索引成功\n");
-            response.append("- 字符数: ").append(documentData.getContent().length()).append("\n");
-            response.append("- 文件类型: ").append(documentData.getContentType()).append("\n");
+            response.append("- 字符数: ").append(fullText.length()).append("\n");
+            response.append("- 文件类型: ").append(processedDoc.getContentType()).append("\n");
+            if (processedDoc.isHasImages()) {
+                response.append("- 图片数量: ").append(processedDoc.getImageCount()).append("\n");
+            }
 
             // 添加元数据信息
-            if (documentData.getMetadata() != null && !documentData.getMetadata().isEmpty()) {
+            if (processedDoc.getMetadata() != null && !processedDoc.getMetadata().isEmpty()) {
                 response.append("- 元数据: ");
-                documentData.getMetadata().forEach((key, value) -> {
-                    if (!"detected-type".equals(key)) {
-                        response.append(key).append("=").append(value).append(" ");
-                    }
+                processedDoc.getMetadata().forEach((key, value) -> {
+                    response.append(key).append("=").append(value).append(" ");
                 });
             }
 

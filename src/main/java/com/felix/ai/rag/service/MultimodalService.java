@@ -137,6 +137,28 @@ public class MultimodalService {
     }
 
     /**
+     * 直接描述Base64编码的图像
+     *
+     * @param base64Image Base64编码的图像数据
+     * @param prompt 提示词（可选）
+     * @return 图像描述
+     */
+    public String describeImage(String base64Image, String prompt) {
+        if (!multimodalEnabled) {
+            throw new IllegalStateException("多模态功能未启用");
+        }
+
+        log.info("处理Base64图像，提示词: {}", prompt);
+
+        // 使用PNG格式作为默认MIME类型（PDF提取的图片通常是PNG）
+        String description = generateImageDescription(base64Image, "image/png", prompt);
+
+        log.info("图像描述生成完成: {}", description.substring(0, Math.min(50, description.length())) + "...");
+
+        return description;
+    }
+
+    /**
      * 基于图像进行问答
      *
      * @param imageFile 图像文件

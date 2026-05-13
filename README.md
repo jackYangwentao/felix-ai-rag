@@ -205,6 +205,21 @@ curl -X POST http://localhost:8080/api/v1/rag/documents \
   }'
 ```
 
+**方式5：上传PDF并提取图片（多模态）**
+```bash
+# 上传PDF并提取其中的图片到知识库
+# 需要配置视觉模型（如 llava-phi3）
+curl -X POST http://localhost:8080/api/v1/rag/documents/file \
+  -F "file=@/path/to/document.pdf" \
+  -F "extractImages=true"
+
+# 响应示例：
+# 文件 "document.pdf" 上传并索引成功
+# - 字符数: 15234
+# - 文件类型: application/pdf
+# - 图片数量: 5
+```
+
 ### 多模态接口（图像处理）
 
 #### 1. 图像描述
@@ -537,6 +552,125 @@ rag:
 ```
 
 **自动识别**：上传 `.md` 或 `.markdown` 文件时自动使用 Markdown 结构分块
+
+## 文档处理架构
+
+### 统一文档处理器
+
+项目提供统一的文档处理入口 `DocumentProcessor`，整合所有文档处理功能：
+
+```java
+@Autowired
+private DocumentProcessor documentProcessor;
+
+// 简单处理
+ProcessedDocument doc = documentProcessor.process(file);
+
+// 带选项处理（提取PDF图片）
+ProcessingOptions options = ProcessingOptions.builder()
+    .extractImages(true)   // 提取PDF中的图片
+    .extractTables(true)   // 提取表格
+    .build();
+ProcessedDocument doc = documentProcessor.process(file, options);
+```
+
+### 文档处理流程
+
+```
+上传文件 → DocumentProcessor → 自动检测类型 → 选择处理器 → 提取内容 → 返回内容块
+                │
+                ├── PDF → EnhancedPdfLoader → 文本(Tika) + 图片(PDFBox)
+                ├── Markdown → DocumentLoader → 保持结构
+                ├── Office → DocumentLoader → Tika提取
+                └── 其他 → DocumentLoader → 通用提取
+```
+
+### 支持的处理选项
+
+| 选项 | 说明 | 默认值 |
+|------|------|--------|
+| `extractImages` | 提取PDF中的图片 | false |
+| `extractTables` | 提取表格内容 | false |
+| `ocrEnabled` | 启用OCR识别 | false |
+| `maxImageSize` | 最大图片大小 | 10MB |
+
+### 内容块结构
+
+```java
+ContentBlock {
+    type: TEXT / MARKDOWN / IMAGE / TABLE
+    content: 文本内容或图片描述
+    imageData: Base64图片数据（仅图片类型）
+    metadata: 元数据（页码、尺寸等）
+}
+```
+
+### 支持的文件类型
+
+| 类型 | 扩展名 | 处理方式 | 特殊功能 |
+|------|--------|----------|----------|
+| PDF | .pdf | EnhancedPdfLoader | 文本+图片提取 |
+| Markdown | .md, .markdown | DocumentLoader | 结构保持 |
+| 文本 | .txt, .json, .xml, .csv | DocumentLoader | 直接读取 |
+| Word | .doc, .docx | DocumentLoader | 文本提取 |
+| Excel | .xls, .xlsx | DocumentLoader | 文本提取 |
+| PPT | .ppt, .pptx | DocumentLoader | 文本提取 |
+
+### 文档处理类说明
+
+| 类 | 功能 | 使用场景 |
+|----|------|----------|
+| `DocumentProcessor` | 统一入口，自动路由 | 推荐使用 |
+| `DocumentLoader` | 通用文档加载（Tika） | 文本提取 |
+| `EnhancedPdfLoader` | PDF增强处理 | PDF图文提取 |
+| `PdfImageExtractor` | PDF图片提取 | 单独提取图片 |
+
+### PDF 图片处理流程
+
+当上传 PDF 并设置 `extractImages=true` 时，系统会自动处理 PDF 中的图片：
+
+```
+用户上传 PDF
+    ↓
+DocumentProcessor 处理
+    ├── 提取文本 → 索引到向量库
+    └── 提取图片（如果 extractImages=true）
+            ↓
+    遍历每张图片
+            ↓
+    MultimodalService.describeImage()
+        ├── 调用视觉模型（llava-phi3）
+        └── 生成图片描述
+            ↓
+    图片描述 → 索引到向量库
+            ↓
+    完成！PDF 文本和图片都可被检索
+```
+
+**处理流程说明**：
+1. **提取图片**：使用 PDFBox 从 PDF 中提取图片（Base64 编码）
+2. **生成描述**：调用视觉模型生成图片的文本描述
+3. **索引入库**：将图片描述作为文本索引到向量库
+4. **检索支持**：后续问答时可以检索到图片内容
+
+**使用示例**：
+```bash
+# 上传 PDF 并提取图片到知识库
+curl -X POST http://localhost:8080/api/v1/rag/documents/file \
+  -F "file=@report.pdf" \
+  -F "extractImages=true"
+
+# 响应示例：
+# 文件 "report.pdf" 上传并索引成功
+# - 字符数: 15234
+# - 文件类型: application/pdf
+# - 图片数量: 5
+```
+
+**注意事项**：
+- 需要配置视觉模型（如 `llava-phi3`）才能处理图片
+- 图片处理会增加上传时间（每张图片需要调用视觉模型）
+- 过滤小于 100x100 像素的图片（避免图标和装饰元素）
 
 ## 分块策略详解
 
