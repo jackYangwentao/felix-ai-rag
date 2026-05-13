@@ -401,7 +401,20 @@ rag:
       rrf-k: 60                 # RRF融合参数
 ```
 
-### 3. 混合检索配置
+### 3. Text2SQL配置
+
+```yaml
+rag:
+  text2sql:
+    enabled: true               # 启用Text2SQL功能
+    temperature: 0.0            # SQL生成温度（0表示确定性输出）
+    max-retry-count: 3          # SQL错误修复最大重试次数
+    top-k-retrieval: 5          # 知识库检索数量
+    max-result-rows: 100        # 查询结果最大行数限制
+    read-only: true             # 是否只读模式（只允许SELECT）
+```
+
+### 4. 混合检索配置
 
 ```yaml
 rag:
@@ -604,10 +617,46 @@ Score(Q, D) = Σ IDF(q_i) · [f(q_i,D)·(k1+1)] / [f(q_i,D) + k1·(1-b+b·|D|/av
 **示例**：
 ```
 输入: "2023年张三写的关于机器学习的论文"
-输出: 
+输出:
   - 语义查询: "机器学习 论文"
   - 过滤条件: year=2023, author=张三
 ```
+
+### 6. Text2SQL
+
+参考 Datawhale All-In-RAG Text2SQL章节
+
+**原理**：利用LLM将自然语言问题转换为可执行的SQL查询语句
+
+**核心流程**：
+```
+用户问题 → 知识库检索 → 构建上下文 → LLM生成SQL → 安全执行 → 返回结果
+                ↓                              ↓
+         [DDL/描述/示例]                  执行失败
+                ↓                              ↓
+         分层组织上下文                   错误修复 → 重试
+```
+
+**知识库组成**：
+- **DDL**：表结构定义（CREATE TABLE语句）
+- **字段描述**：表和字段的自然语言解释
+- **查询示例**：问题-SQL示例对
+- **业务术语**：同义词映射（如"花费"→cost字段）
+
+**RAG增强优势**：
+- 提供精确的数据库模式，减少LLM幻觉
+- 检索相关表结构和示例，提高SQL准确性
+- 支持业务术语映射，理解用户意图
+
+**错误修复机制**：
+- 执行SQL出错后，将错误信息反馈给LLM
+- LLM分析错误原因并修复SQL
+- 最多重试3次，确保最终成功
+
+**安全策略**：
+- 只读模式（只允许SELECT查询）
+- 自动添加LIMIT限制结果数量
+- 查询超时控制（30秒）
 
 ## 项目结构
 
@@ -619,7 +668,8 @@ felix-ai-rag/
 │   ├── controller/
 │   │   ├── RagController.java              # 基础API
 │   │   ├── QueryRewriteController.java     # 查询重写API
-│   │   ├── AdvancedRetrievalController.java # 高级检索API（新增）
+│   │   ├── AdvancedRetrievalController.java # 高级检索API
+│   │   ├── Text2SqlController.java         # Text2SQL API
 │   │   ├── HybridSearchController.java     # 混合检索API
 │   │   ├── SelfQueryController.java        # Self-Query API
 │   │   ├── OptimizedRagController.java     # 优化版RAG API
@@ -630,7 +680,11 @@ felix-ai-rag/
 │   │   ├── RerankerService.java            # 重排序服务
 │   │   └── EnhancedSearchService.java      # 增强搜索服务
 │   ├── rag/
-│   │   └── CorrectiveRagService.java       # C-RAG服务（新增）
+│   │   └── CorrectiveRagService.java       # C-RAG服务
+│   ├── text2sql/
+│   │   ├── Text2SqlKnowledgeBase.java      # Text2SQL知识库
+│   │   ├── Text2SqlGenerator.java          # SQL生成器
+│   │   └── Text2SqlAgent.java              # Text2SQL Agent
 │   ├── retriever/
 │   │   ├── HybridRetriever.java            # 基础混合检索器
 │   │   ├── AdvancedHybridRetriever.java    # 高级混合检索器
@@ -670,6 +724,8 @@ felix-ai-rag/
 | **结构化数据查询** | Self-Query + 元数据过滤 |
 | **高可靠性要求** | C-RAG校正检索 + 上下文压缩 + 混合检索 |
 | **长文档问答** | 父文档检索 + 句子窗口 + 上下文压缩 |
+| **数据库自然语言查询** | Text2SQL + RAG增强知识库 |
+| **数据分析报表** | Text2SQL + 查询重写 + 混合检索 |
 
 ## 技术选择指南
 
@@ -690,6 +746,16 @@ felix-ai-rag/
 | **C-RAG** | 需要高可靠性 | 中 | ⭐⭐⭐⭐ |
 | **父文档检索** | 需要精确+上下文 | 低 | ⭐⭐⭐⭐ |
 | **集成检索器** | 需要高召回率 | 中 | ⭐⭐⭐⭐ |
+
+### Text2SQL
+
+| 配置项 | 说明 | 建议值 |
+|--------|------|--------|
+| **temperature** | SQL生成随机性 | 0.0（确定性） |
+| **max-retry-count** | 错误修复重试次数 | 3 |
+| **top-k-retrieval** | 知识库检索数量 | 5 |
+| **max-result-rows** | 结果行数限制 | 100 |
+| **read-only** | 只读模式 | true（生产环境） |
 
 ## 性能优化建议
 
@@ -719,9 +785,17 @@ felix-ai-rag/
 - 合理设置max-results和min-score
 - 根据场景选择合适的技术组合
 
+### 5. Text2SQL优化
+- **知识库质量**：完善的DDL和字段描述是提高SQL准确性的关键
+- **查询示例**：添加常见查询模式的示例，帮助LLM学习
+- **业务术语**：建立业务术语到数据库字段的映射
+- **错误修复**：利用自动修复机制处理边界情况
+- **安全策略**：生产环境务必启用read-only模式
+
 ## 参考资源
 
 - [Datawhale All-In-RAG 教程](https://github.com/datawhalechina/all-in-rag)
+- [Datawhale All-In-RAG Text2SQL文档](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter4/13_text2sql.md)
 - [LangChain4J 官方文档](https://docs.langchain4j.dev/)
 - [Ollama 官方文档](https://ollama.com/)
 

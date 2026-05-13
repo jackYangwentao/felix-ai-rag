@@ -5,6 +5,19 @@ spring:
   application:
     name: felix-ai-rag
 
+  # H2 Database Configuration (for Text2SQL)
+  datasource:
+    url: jdbc:h2:mem:text2sql_db;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  # H2 Console (开发调试使用)
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
 # LangChain4J Configuration
 langchain4j:
   ollama:
