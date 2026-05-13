@@ -1,6 +1,6 @@
 # Felix AI RAG
 
-基于 LangChain4J 的 Spring Boot RAG (Retrieval-Augmented Generation) 应用，深度参考 [Datawhale All-In-RAG](https://github.com/datawhalechina/all-in-rag) 教程实现，整合了索引优化、查询构建、查询重写、混合搜索等高级RAG技术。
+基于 LangChain4J 的 Spring Boot RAG (Retrieval-Augmented Generation) 应用，深度参考 [Datawhale All-In-RAG](https://github.com/datawhalechina/all-in-rag) 教程实现，整合了索引优化、查询构建、查询重写、高级检索、混合搜索等全方位RAG技术。
 
 ## 功能特性
 
@@ -24,6 +24,12 @@
 - **Self-Query**：自然语言自动解析为语义查询+元数据过滤
 - **查询重写**：4种重写技术（提示工程、多查询分解、Step-Back、HyDE）
 - **查询扩展**：多查询变体、HyDE假设文档
+
+### 高级检索（参考 Datawhale All-In-RAG）
+- **上下文压缩**：提取相关内容，去除噪音
+- **C-RAG校正检索**：自我反思机制（检索-评估-行动）
+- **父文档检索**：小块匹配，大块上下文
+- **集成检索器**：多路召回 + RRF融合
 
 ### 检索优化
 - **重排序（Reranking）**：两阶段检索提高相关性
@@ -64,6 +70,17 @@
 │  │  └──────────┘ └──────────┘ └──────────┘     │
 │  │  ┌──────────┐                                │
 │  │  │  HyDE   │ - 假设文档嵌入                 │
+│  │  └──────────┘                                │
+│  └──────────────────────────────────────────────┘
+│      ↓
+│  ┌──────────────────────────────────────────────┐
+│  │           高级检索技术（4种）                  │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐     │
+│  │  │上下文压缩│ │ C-RAG   │ │父文档检索│     │
+│  │  │(去噪音)  │ │(自校正) │ │(块+上下文)│     │
+│  │  └──────────┘ └──────────┘ └──────────┘     │
+│  │  ┌──────────┐                                │
+│  │  │集成检索器│ - 多路召回+RRF融合             │
 │  │  └──────────┘                                │
 │  └──────────────────────────────────────────────┘
 │      ↓
@@ -134,7 +151,7 @@ curl -X POST http://localhost:8080/api/v1/rag/documents/file \
   -F "file=@/path/to/document.pdf"
 ```
 
-### 查询重写接口（新增）
+### 查询重写接口
 
 #### 1. 结构化查询分析（排序/比较查询）
 ```bash
@@ -202,9 +219,44 @@ curl -X POST http://localhost:8080/api/v1/rag/query-rewrite/comprehensive \
 # 返回所有适用的重写结果和策略
 ```
 
-### 高级检索接口
+### 高级检索接口（新增）
 
-#### 混合检索（推荐）
+#### 1. 上下文压缩检索
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/advanced-retrieval/compress \
+  -H "Content-Type: application/json" \
+  -d '{"query": "机器学习", "maxResults": 5}'
+
+# 返回:
+# {
+#   "originalCount": 10,
+#   "compressedCount": 5,
+#   "filteredCount": 3,
+#   "averageCompressionRatio": "35.2%",
+#   "compressedContents": [...]
+# }
+```
+
+#### 2. C-RAG校正检索
+```bash
+curl -X POST http://localhost:8080/api/v1/rag/advanced-retrieval/crag \
+  -H "Content-Type: application/json" \
+  -d '{"query": "量子计算最新进展", "maxResults": 5}'
+
+# 返回:
+# {
+#   "assessment": {
+#     "grade": "AMBIGUOUS",
+#     "reason": "检索到的文档信息不完整"
+#   },
+#   "actionTaken": "知识搜索（原始查询）",
+#   "finalContentCount": 5
+# }
+```
+
+### 混合检索接口
+
+#### 基础混合检索
 ```bash
 # 基础混合检索
 curl "http://localhost:8080/api/v1/rag/hybrid/search?query=机器学习&maxResults=5"
@@ -261,7 +313,28 @@ rag:
       enabled: false            # 启用HyDE（会增加LLM调用和嵌入计算）
 ```
 
-### 2. 混合检索配置
+### 2. 高级检索配置
+
+```yaml
+rag:
+  advanced-retrieval:
+    contextual-compression:
+      enabled: true             # 启用上下文压缩
+
+    corrective-rag:
+      enabled: true             # 启用C-RAG校正检索
+      max-iterations: 3         # 最大迭代次数
+      web-search-enabled: false # 是否启用Web搜索
+
+    parent-document:
+      enabled: true             # 启用父文档检索
+
+    ensemble:
+      enabled: true             # 启用集成检索器
+      rrf-k: 60                 # RRF融合参数
+```
+
+### 3. 混合检索配置
 
 ```yaml
 rag:
@@ -276,7 +349,7 @@ rag:
       b: 0.75                   # 长度归一化参数
 ```
 
-### 3. 句子窗口配置
+### 4. 句子窗口配置
 
 ```yaml
 rag:
@@ -360,7 +433,82 @@ rag:
 
 **优势**：提升语义匹配质量
 
-### 2. 混合检索（Hybrid Search）
+### 2. 高级检索技术（4种）
+
+参考 Datawhale All-In-RAG 高级检索技术章节
+
+#### 2.1 上下文压缩（Contextual Compression）
+
+**原理**：从初步检索到的文档中提取与查询最相关的部分，去除无关噪音
+
+**两种方式**：
+- **内容提取**：从文档中只抽出与查询相关的句子或段落
+- **文档过滤**：丢弃经判断后不相关的整个文档
+
+**适用场景**：检索结果包含大量无关内容
+
+**优势**：减少上下文噪音，提高LLM处理效率
+
+**工作流程**：
+```
+初始检索 → 相关性判断 → 内容提取 → 压缩结果
+```
+
+#### 2.2 C-RAG校正检索（Corrective RAG）
+
+**原理**：自我反思机制，"检索-评估-行动"三步流程
+
+**核心流程**：
+1. **检索**：从知识库获取文档
+2. **评估**：判断文档相关性
+   - `CORRECT`：相关且足以回答
+   - `INCORRECT`：不相关或无法回答
+   - `AMBIGUOUS`：部分相关，信息不完整
+3. **行动**：
+   - CORRECT → **知识精炼**（分解为知识片段）
+   - INCORRECT → **知识搜索**（查询重写 + Web搜索）
+   - AMBIGUOUS → **知识搜索**（原始查询）
+
+**适用场景**：需要高可靠性答案的场景
+
+**优势**：自动检测并修正检索质量问题
+
+#### 2.3 父文档检索（Parent Document Retrieval）
+
+**原理**：小块检索匹配，大块提供上下文
+
+**核心思想**：
+- 检索时返回细粒度文本块（如句子/段落）用于匹配
+- 但将更大的父文档（如整页/整节）作为上下文提供给LLM
+
+**实现方式**：
+- 索引阶段：建立子块到父文档的映射
+- 检索阶段：小块匹配，返回父文档完整内容
+
+**适用场景**：需要精确匹配但又要保持上下文连贯性
+
+**优势**：平衡检索精度和上下文丰富性
+
+#### 2.4 集成检索器（Ensemble Retriever）
+
+**原理**：组合多个不同的检索器，使用RRF融合多路召回结果
+
+**支持的检索器类型**：
+- 稠密向量检索器（语义理解）
+- 稀疏关键词检索器（精确匹配）
+- 图检索器（关系推理）
+- 自定义检索器
+
+**RRF融合公式**：
+```
+RRF_score(d) = Σ(1 / (rank_i(d) + k))
+```
+
+**适用场景**：需要高召回率的场景
+
+**优势**：综合利用多种检索策略的优势
+
+### 3. 混合检索（Hybrid Search）
 
 **原理**：结合稠密向量检索（语义理解）和稀疏关键词检索（精确匹配）
 
@@ -373,7 +521,7 @@ rag:
 Score(Q, D) = Σ IDF(q_i) · [f(q_i,D)·(k1+1)] / [f(q_i,D) + k1·(1-b+b·|D|/avgdl)]
 ```
 
-### 3. 句子窗口检索（Sentence Window Retrieval）
+### 4. 句子窗口检索（Sentence Window Retrieval）
 
 **原理**：为检索精确性而索引小块（句子），为上下文丰富性而检索大块（窗口）
 
@@ -382,7 +530,7 @@ Score(Q, D) = Σ IDF(q_i) · [f(q_i,D)·(k1+1)] / [f(q_i,D) + k1·(1-b+b·|D|/av
 2. 检索阶段：在单一句子上执行相似度搜索（高精度）
 3. 后处理：用完整窗口文本替换单一句子（丰富上下文）
 
-### 4. Self-Query检索
+### 5. Self-Query检索
 
 **原理**：使用LLM将自然语言查询解析为语义查询+元数据过滤条件
 
@@ -403,7 +551,8 @@ felix-ai-rag/
 │   │   └── RagConfiguration.java           # RAG配置
 │   ├── controller/
 │   │   ├── RagController.java              # 基础API
-│   │   ├── QueryRewriteController.java     # 查询重写API（新增）
+│   │   ├── QueryRewriteController.java     # 查询重写API
+│   │   ├── AdvancedRetrievalController.java # 高级检索API（新增）
 │   │   ├── HybridSearchController.java     # 混合检索API
 │   │   ├── SelfQueryController.java        # Self-Query API
 │   │   ├── OptimizedRagController.java     # 优化版RAG API
@@ -413,13 +562,18 @@ felix-ai-rag/
 │   │   ├── OptimizedRagService.java        # 优化版RAG服务
 │   │   ├── RerankerService.java            # 重排序服务
 │   │   └── EnhancedSearchService.java      # 增强搜索服务
+│   ├── rag/
+│   │   └── CorrectiveRagService.java       # C-RAG服务（新增）
 │   ├── retriever/
 │   │   ├── HybridRetriever.java            # 基础混合检索器
-│   │   └── AdvancedHybridRetriever.java    # 高级混合检索器
+│   │   ├── AdvancedHybridRetriever.java    # 高级混合检索器
+│   │   ├── ContextualCompressionRetriever.java # 上下文压缩（新增）
+│   │   ├── ParentDocumentRetriever.java    # 父文档检索（新增）
+│   │   └── EnsembleRetriever.java          # 集成检索器（新增）
 │   ├── query/
 │   │   ├── SelfQueryRetriever.java         # Self-Query解析
 │   │   ├── QueryRewriteService.java        # 基础查询重写
-│   │   ├── AdvancedQueryRewriteService.java # 高级查询重写（新增）
+│   │   ├── AdvancedQueryRewriteService.java # 高级查询重写
 │   │   ├── QueryExpansionService.java      # 查询扩展
 │   │   └── StructuredQueryBuilder.java     # 结构化查询构建
 │   ├── processor/
@@ -439,16 +593,20 @@ felix-ai-rag/
 
 | 场景 | 推荐技术组合 |
 |------|-------------|
-| **通用知识问答** | 综合查询重写 + 混合检索(RRF) + 句子窗口 |
+| **通用知识问答** | 综合查询重写 + 高级检索(C-RAG) + 混合检索(RRF) + 句子窗口 |
 | **排序/比较查询** | 结构化查询分析 + 元数据过滤 |
-| **复杂多主题问题** | 多查询分解 + 混合检索 |
-| **科学推理解题** | Step-Back退步提示 + 混合检索 |
-| **短查询长文档** | HyDE + 混合检索 |
+| **复杂多主题问题** | 多查询分解 + 集成检索器 + 混合检索 |
+| **科学推理解题** | Step-Back退步提示 + 父文档检索 + 混合检索 |
+| **短查询长文档** | HyDE + 上下文压缩 + 混合检索 |
 | **精确术语搜索** | 提高关键词权重(0.7) + 元数据过滤 |
 | **多主题探索** | MMR多样性搜索(diversity=0.5) |
 | **结构化数据查询** | Self-Query + 元数据过滤 |
+| **高可靠性要求** | C-RAG校正检索 + 上下文压缩 + 混合检索 |
+| **长文档问答** | 父文档检索 + 句子窗口 + 上下文压缩 |
 
-## 查询重写技术选择指南
+## 技术选择指南
+
+### 查询重写技术
 
 | 技术 | 适用场景 | 开销 | 推荐度 |
 |------|----------|------|--------|
@@ -456,6 +614,15 @@ felix-ai-rag/
 | **多查询分解** | 复杂多主题问题 | 中 | ⭐⭐⭐⭐ |
 | **Step-Back** | 科学推理解题 | 低 | ⭐⭐⭐⭐ |
 | **HyDE** | 短查询长文档 | 高 | ⭐⭐⭐ |
+
+### 高级检索技术
+
+| 技术 | 适用场景 | 开销 | 推荐度 |
+|------|----------|------|--------|
+| **上下文压缩** | 检索结果包含噪音 | 中 | ⭐⭐⭐⭐⭐ |
+| **C-RAG** | 需要高可靠性 | 中 | ⭐⭐⭐⭐ |
+| **父文档检索** | 需要精确+上下文 | 低 | ⭐⭐⭐⭐ |
+| **集成检索器** | 需要高召回率 | 中 | ⭐⭐⭐⭐ |
 
 ## 性能优化建议
 
@@ -473,10 +640,17 @@ felix-ai-rag/
 - **Step-Back**：开销低，适合推理类查询
 - **HyDE**：增加LLM调用和嵌入计算，按需启用
 
-### 3. 检索优化
+### 3. 高级检索性能
+- **上下文压缩**：增加LLM调用，但减少后续处理token
+- **C-RAG**：增加评估步骤，但提高答案质量
+- **父文档检索**：索引时建立映射，检索时开销低
+- **集成检索器**：多路并行，适合高召回场景
+
+### 4. 检索优化
 - 启用查询重写改善检索质量
 - 使用批量搜索提高吞吐量
 - 合理设置max-results和min-score
+- 根据场景选择合适的技术组合
 
 ## 参考资源
 

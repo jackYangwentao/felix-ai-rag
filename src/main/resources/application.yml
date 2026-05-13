@@ -155,6 +155,24 @@ rag:
   self-query:
     enabled: true                 # 启用Self-Query检索
 
+  # 高级检索配置
+  # 参考 Datawhale All-In-RAG 高级检索技术章节
+  advanced-retrieval:
+    contextual-compression:
+      enabled: true               # 启用上下文压缩
+
+    corrective-rag:
+      enabled: true               # 启用C-RAG校正检索
+      max-iterations: 3           # 最大迭代次数
+      web-search-enabled: false   # 是否启用Web搜索（需要配置API）
+
+    parent-document:
+      enabled: true               # 启用父文档检索
+
+    ensemble:
+      enabled: true               # 启用集成检索器
+      rrf-k: 60                   # RRF融合参数
+
 # Logging
 logging:
   level:
