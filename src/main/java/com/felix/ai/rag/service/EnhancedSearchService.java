@@ -94,14 +94,28 @@ public class EnhancedSearchService {
             long rerankStart = System.currentTimeMillis();
             List<RerankerService.ScoredDocument> reranked = rerankerService.rerank(query, candidates, topK);
 
+            // 过滤掉低分结果（低于5分视为不相关）
             finalResults = reranked.stream()
+                    .filter(doc -> doc.getScore() >= 5.0)
                     .map(doc -> SearchResultItem.builder()
                             .content(doc.getContent())
                             .rerankScore(doc.getScore())
                             .build())
                     .collect(Collectors.toList());
 
-            log.debug("重排序完成，耗时 {}ms", System.currentTimeMillis() - rerankStart);
+            log.debug("重排序完成，耗时 {}ms，过滤后剩余 {} 个结果",
+                    System.currentTimeMillis() - rerankStart, finalResults.size());
+
+            // 如果过滤后没有结果，返回空列表
+            if (finalResults.isEmpty()) {
+                log.info("重排序后无相关结果（所有候选分数均低于5分）");
+                return SearchResult.builder()
+                        .query(query)
+                        .results(new ArrayList<>())
+                        .totalResults(0)
+                        .usedRerank(true)
+                        .build();
+            }
         } else {
             finalResults = candidates.stream()
                     .limit(topK)
