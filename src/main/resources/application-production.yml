@@ -1,0 +1,106 @@
+# 生产环境配置
+# Elasticsearch + Milvus 混合检索架构
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: felix-ai-rag-production
+
+  # PostgreSQL 元数据数据库
+  datasource:
+    url: jdbc:postgresql://localhost:5432/rag_metadata
+    username: ${DB_USER:rag_user}
+    password: ${DB_PASSWORD:rag_password}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+# LangChain4J Configuration
+langchain4j:
+  ollama:
+    base-url: http://localhost:11434
+    chat-model:
+      model-name: llama3.2
+      temperature: 0.7
+      timeout: 60s
+    embedding-model:
+      model-name: nomic-embed-text
+      timeout: 60s
+
+# RAG 生产级配置
+rag:
+  chunk-size: 1000
+  chunk-overlap: 200
+  max-results: 10
+  min-score: 0.5
+  embedding-dimension: 768
+
+  # ==================== 生产级存储配置 ====================
+
+  # 向量存储配置 (Milvus)
+  storage:
+    vector:
+      type: milvus  # 可选: memory, milvus, qdrant, pgvector
+
+    keyword:
+      type: elasticsearch  # 可选: memory, elasticsearch, opensearch
+
+    # Milvus 配置
+    milvus:
+      host: ${MILVUS_HOST:localhost}
+      port: ${MILVUS_PORT:19530}
+      collection: rag_documents
+      index-type: HNSW        # HNSW: 高性能近似搜索, IVF_FLAT: 平衡性能和召回
+      metric-type: COSINE     # COSINE: 余弦相似度, L2: 欧氏距离
+      dimension: 768
+
+    # Elasticsearch 配置
+    elasticsearch:
+      host: ${ES_HOST:localhost}
+      port: ${ES_PORT:9200}
+      username: ${ES_USERNAME:}
+      password: ${ES_PASSWORD:}
+      index: rag_documents
+      shards: 3               # 分片数，根据数据量调整
+      replicas: 1             # 副本数，生产环境建议 >=1
+
+  # 混合检索配置
+  hybrid-retriever:
+    strategy: RRF             # RRF: Reciprocal Rank Fusion, WEIGHTED_SUM: 加权线性组合
+    vector-weight: 0.7        # 向量检索权重 (0-1)
+    keyword-weight: 0.3       # 关键词检索权重 (0-1)
+    rrf-k: 60                 # RRF公式中的k参数（平滑常数）
+    max-results: 10           # 默认返回结果数
+    min-score: 0.5            # 最小相似度分数
+    enable-parallel: true     # 启用并行双路检索
+    thread-pool-size: 10      # 线程池大小
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.felix.ai.rag: INFO
+    io.milvus: WARN
+    co.elastic.clients: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# 应用指标监控
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
